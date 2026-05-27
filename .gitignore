@@ -1,0 +1,33 @@
+# Build artifacts
+.gradle/
+build/
+*.apk
+*.aab
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+
+# Old/deprecated files
+claude_vision.py
+MainActivity_Updated.kt
+backend_init.txt
+
+# Local environment
+.env
+venv/
+env/
