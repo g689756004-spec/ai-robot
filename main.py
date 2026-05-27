@@ -1,5 +1,3 @@
-"""Main FastAPI application for AI Agent backend."""
-
 import logging
 import base64
 from fastapi import FastAPI, WebSocket, UploadFile, File
@@ -8,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from config import settings
-from claude_vision import ClaudeVisionAnalyzer
+from groq_vision import GroqVisionAnalyzer   # ✅ FIXED HERE
 from task_orchestrator import orchestrator
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-vision_analyzer = ClaudeVisionAnalyzer()
+vision_analyzer = GroqVisionAnalyzer()
 active_connections = []
 
 
