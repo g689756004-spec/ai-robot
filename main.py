@@ -55,6 +55,9 @@ active_connections = []
 
 groq_client = Groq(api_key=settings.groq_api_key)
 
+# 🔥 FIXED MODEL (IMPORTANT)
+GROQ_CHAT_MODEL = "llama-3.1-8b-instant"
+
 
 # ---------------------------------------------------
 # CHAT MODEL
@@ -83,22 +86,21 @@ async def health():
 
 
 # ---------------------------------------------------
-# CHAT ENDPOINT (IMPORTANT NEW PART)
+# CHAT ENDPOINT (FIXED)
 # ---------------------------------------------------
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    """Simple human-like AI chat endpoint"""
 
     try:
         response = groq_client.chat.completions.create(
-            model="mixtral-8x7b-32768",
+            model=GROQ_CHAT_MODEL,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are a smart, friendly AI assistant. "
-                        "Talk naturally like a human. Keep responses short and clear."
+                        "You are a smart, friendly, human-like AI assistant. "
+                        "Talk naturally, like a real person. Keep responses short and helpful."
                     )
                 },
                 {
@@ -216,7 +218,7 @@ async def cancel_task(task_id: str):
 
 
 # ---------------------------------------------------
-# WEBSOCKET (UNCHANGED BUT CLEANED)
+# WEBSOCKET
 # ---------------------------------------------------
 
 @app.websocket("/ws/agent")
