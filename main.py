@@ -1,11 +1,9 @@
 import logging
 import base64
-
 from fastapi import FastAPI, WebSocket, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
 import uvicorn
 
 from config import settings
@@ -13,29 +11,14 @@ from groq import Groq
 from task_orchestrator import orchestrator
 from groq_vision import GroqVisionAnalyzer
 
-
-# ---------------------------------------------------
-# LOGGING
-# ---------------------------------------------------
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------
-# FASTAPI APP
-# ---------------------------------------------------
-
 app = FastAPI(
     title="AI Robot Agent Backend",
-    description="Backend for autonomous AI agent on Android tablet",
+    description="Backend for autonomous Android AI Agent",
     version="0.1.0"
 )
-
-
-# ---------------------------------------------------
-# CORS
-# ---------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,31 +28,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ---------------------------------------------------
-# GLOBALS
-# ---------------------------------------------------
-
 vision_analyzer = GroqVisionAnalyzer()
-active_connections = []
-
 groq_client = Groq(api_key=settings.groq_api_key)
 
-# 🔥 FIXED MODEL (IMPORTANT)
-GROQ_CHAT_MODEL = "llama-3.1-8b-instant"
+active_connections = []
 
+CHAT_MODEL = "llama-3.1-8b-instant"
 
-# ---------------------------------------------------
-# CHAT MODEL
-# ---------------------------------------------------
 
 class ChatRequest(BaseModel):
     message: str
 
-
-# ---------------------------------------------------
-# ROOT
-# ---------------------------------------------------
 
 @app.get("/")
 async def root():
@@ -85,23 +54,15 @@ async def health():
     return {"status": "healthy"}
 
 
-# ---------------------------------------------------
-# CHAT ENDPOINT (FIXED)
-# ---------------------------------------------------
-
 @app.post("/chat")
 async def chat(request: ChatRequest):
-
     try:
         response = groq_client.chat.completions.create(
-            model=GROQ_CHAT_MODEL,
+            model=CHAT_MODEL,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "You are a smart, friendly, human-like AI assistant. "
-                        "Talk naturally, like a real person. Keep responses short and helpful."
-                    )
+                    "content": "You are a helpful AI robot assistant. Respond naturally and briefly."
                 },
                 {
                     "role": "user",
@@ -112,128 +73,143 @@ async def chat(request: ChatRequest):
             max_tokens=300
         )
 
-        reply = response.choices[0].message.content
-
-        return {"reply": reply}
+        return {
+            "reply": response.choices[0].message.content
+        }
 
     except Exception as e:
-        logger.error(f"Chat error: {str(e)}")
-        return {"error": str(e)}
+        logger.error(f"Chat error: {e}")
+        return {
+            "error": str(e)
+        }
 
-
-# ---------------------------------------------------
-# SCREEN ANALYSIS
-# ---------------------------------------------------
 
 @app.post("/api/analyze-screen")
-async def analyze_screen(file: UploadFile = File(...), context: str = None):
-
+async def analyze_screen(
+    file: UploadFile = File(...),
+    context: str = None
+):
     try:
-        contents = await file.read()
-        screenshot_base64 = base64.b64encode(contents).decode("utf-8")
+        image = await file.read()
 
-        analysis = vision_analyzer.analyze_screen(
-            screenshot_base64,
+        encoded = base64.b64encode(image).decode()
+
+        result = vision_analyzer.analyze_screen(
+            encoded,
             context
         )
 
-        return JSONResponse(content=analysis)
+        return JSONResponse(content=result)
 
     except Exception as e:
-        logger.error(f"Analyze screen error: {str(e)}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        logger.error(f"Vision error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 
 @app.post("/api/extract-text")
 async def extract_text(file: UploadFile = File(...)):
-
     try:
-        contents = await file.read()
-        screenshot_base64 = base64.b64encode(contents).decode("utf-8")
+        image = await file.read()
 
-        text = vision_analyzer.extract_text(screenshot_base64)
+        encoded = base64.b64encode(image).decode()
 
-        return JSONResponse(content={"text": text})
+        text = vision_analyzer.extract_text(encoded)
+
+        return {
+            "text": text
+        }
 
     except Exception as e:
-        logger.error(f"Extract text error: {str(e)}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return {
+            "error": str(e)
+        }
 
 
 @app.post("/api/understand-layout")
 async def understand_layout(file: UploadFile = File(...)):
-
     try:
-        contents = await file.read()
-        screenshot_base64 = base64.b64encode(contents).decode("utf-8")
+        image = await file.read()
 
-        layout = vision_analyzer.understand_layout(screenshot_base64)
+        encoded = base64.b64encode(image).decode()
 
-        return JSONResponse(content=layout)
+        result = vision_analyzer.understand_layout(encoded)
+
+        return result
 
     except Exception as e:
-        logger.error(f"Understand layout error: {str(e)}")
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return {
+            "error": str(e)
+        }
 
-
-# ---------------------------------------------------
-# TASK MANAGEMENT
-# ---------------------------------------------------
 
 @app.post("/api/task/create")
-async def create_task(task_id: str, goal: str, user_command: str):
-
+async def create_task(
+    task_id: str,
+    goal: str,
+    user_command: str
+):
     try:
-        task = orchestrator.create_task(task_id, goal, user_command)
-        return JSONResponse(content=task.to_dict())
+        task = orchestrator.create_task(
+            task_id,
+            goal,
+            user_command
+        )
+
+        return task.to_dict()
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return {
+            "error": str(e)
+        }
 
 
 @app.get("/api/task/{task_id}/status")
-async def get_task_status(task_id: str):
+async def task_status(task_id: str):
 
-    try:
-        status = orchestrator.get_task_status(task_id)
+    task = orchestrator.get_task_status(task_id)
 
-        if not status:
-            return JSONResponse(status_code=404, content={"error": "Task not found"})
+    if task is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Task not found"}
+        )
 
-        return JSONResponse(content=status)
-
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    return task
 
 
 @app.post("/api/task/{task_id}/cancel")
 async def cancel_task(task_id: str):
 
-    try:
-        orchestrator.cancel_task(task_id)
-        return {"status": "cancelled", "task_id": task_id}
+    orchestrator.cancel_task(task_id)
 
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    return {
+        "status": "cancelled",
+        "task_id": task_id
+    }
 
-
-# ---------------------------------------------------
-# WEBSOCKET
-# ---------------------------------------------------
 
 @app.websocket("/ws/agent")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_agent(websocket: WebSocket):
 
     await websocket.accept()
+
     active_connections.append(websocket)
 
-    logger.info("WebSocket client connected")
+    logger.info("Android agent connected")
 
     try:
         while True:
 
             data = await websocket.receive_json()
+
             message_type = data.get("type")
+
+            logger.info(
+                f"Received: {message_type}"
+            )
 
             if message_type == "screenshot":
 
@@ -242,47 +218,81 @@ async def websocket_endpoint(websocket: WebSocket):
                     data.get("context")
                 )
 
-                await websocket.send_json({
-                    "type": "action",
-                    "analysis": analysis
-                })
+                action = analysis.get(
+                    "next_action",
+                    {
+                        "type": "wait"
+                    }
+                )
+
+                await websocket.send_json(
+                    {
+                        "type": "action",
+                        "action": action,
+                        "analysis": analysis
+                    }
+                )
+
 
             elif message_type == "action_result":
 
+                task_id = data.get("task_id")
+
                 orchestrator.log_step_result(
-                    data.get("task_id"),
-                    data.get("result"),
-                    error=(data.get("status") == "failed")
+                    task_id,
+                    data.get("result", ""),
+                    data.get("status") == "failed"
                 )
 
-                next_action = orchestrator.execute_next_action(data.get("task_id"))
+                next_action = orchestrator.execute_next_action(
+                    task_id
+                )
 
                 if next_action:
-                    await websocket.send_json({
-                        "type": "action",
-                        "action": next_action.to_dict()
-                    })
+
+                    await websocket.send_json(
+                        {
+                            "type": "action",
+                            "action": next_action.to_dict()
+                        }
+                    )
+
                 else:
-                    await websocket.send_json({
-                        "type": "task_complete"
-                    })
+
+                    await websocket.send_json(
+                        {
+                            "type": "task_complete"
+                        }
+                    )
+
 
             elif message_type == "ping":
-                await websocket.send_json({"type": "pong"})
+
+                await websocket.send_json(
+                    {
+                        "type": "pong"
+                    }
+                )
+
 
     except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
+
+        logger.error(
+            f"WebSocket error: {e}"
+        )
 
     finally:
+
         if websocket in active_connections:
             active_connections.remove(websocket)
 
+        logger.info(
+            "Android agent disconnected"
+        )
 
-# ---------------------------------------------------
-# RUN
-# ---------------------------------------------------
 
 if __name__ == "__main__":
+
     uvicorn.run(
         app,
         host=settings.host,
