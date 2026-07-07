@@ -1,212 +1,429 @@
-package com.robot.ai.ai
+package com.robot.ai
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.util.Base64
+import android.content.Intent
 import com.google.gson.Gson
-import com.robot.ai.models.ScreenAnalysis
-import kotlinx.coroutines.*
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import com.robot.ai.network.WebSocketClient
+import com.robot.ai.network.WebSocketMessageHandler
+import com.robot.ai.automation.ActionCoordinator
+import com.robot.ai.services.ScreenCaptureService
+import com.robot.ai.services.VoiceRecognitionService
+import com.robot.ai.ai.TaskPlanner
 import timber.log.Timber
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.TimeUnit
+
 
 /**
- * Handles communication with backend AI for screen analysis
- * Sends screenshots and receives action recommendations
+ * Main AI Agent Controller
+ *
+ * Controls:
+ *
+ * Voice
+ * Screen Vision
+ * Tasks
+ * Actions
+ * Backend connection
+ *
  */
 class AIAgent(
-    private val backendUrl: String = "http://10.0.2.2:8000",
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
+    private val context: Context
 ) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
-        .build()
 
     private val gson = Gson()
 
-    /**
-     * Analyze a screenshot and get next action
-     */
-    suspend fun analyzeScreenshot(
-        bitmap: Bitmap,
-        taskContext: String = ""
-    ): ScreenAnalysis? {
-        return withContext(Dispatchers.IO) {
-            try {
-                // Compress screenshot
-                val screenshotBytes = compressScreenshot(bitmap)
-                Timber.d("Screenshot compressed: ${screenshotBytes.size / 1024} KB")
 
-                // Create multipart request
-                val requestBody = createMultipartRequest(
-                    screenshotBytes,
-                    taskContext
-                )
+    private lateinit var webSocketClient: WebSocketClient
 
-                val request = Request.Builder()
-                    .url("$backendUrl/api/analyze-screen")
-                    .post(requestBody)
-                    .build()
 
-                val response = client.newCall(request).execute()
+    private lateinit var taskPlanner: TaskPlanner
 
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    val analysis = gson.fromJson(body, ScreenAnalysis::class.java)
-                    Timber.d("Screen analysis received: ${analysis.analysis.take(50)}...")
-                    analysis
-                } else {
-                    Timber.e("Analysis failed: ${response.code}")
-                    null
-                }
-            } catch (e: Exception) {
-                Timber.e("Error analyzing screenshot: ${e.message}")
-                null
-            }
-        }
-    }
 
-    /**
-     * Extract text from screenshot
-     */
-    suspend fun extractText(bitmap: Bitmap): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                val screenshotBytes = compressScreenshot(bitmap)
-                val requestBody = createMultipartRequest(screenshotBytes, "")
+    private lateinit var actionCoordinator: ActionCoordinator
 
-                val request = Request.Builder()
-                    .url("$backendUrl/api/extract-text")
-                    .post(requestBody)
-                    .build()
 
-                val response = client.newCall(request).execute()
+    private lateinit var messageHandler:
+            WebSocketMessageHandler
 
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    val json = gson.fromJson(body, Map::class.java)
-                    json["text"]?.toString() ?: ""
-                } else {
-                    Timber.e("Text extraction failed: ${response.code}")
-                    ""
-                }
-            } catch (e: Exception) {
-                Timber.e("Error extracting text: ${e.message}")
-                ""
-            }
-        }
-    }
 
-    /**
-     * Understand page layout
-     */
-    suspend fun analyzeLayout(bitmap: Bitmap): Map<String, Any>? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val screenshotBytes = compressScreenshot(bitmap)
-                val requestBody = createMultipartRequest(screenshotBytes, "")
 
-                val request = Request.Builder()
-                    .url("$backendUrl/api/understand-layout")
-                    .post(requestBody)
-                    .build()
+    private var initialized = false
 
-                val response = client.newCall(request).execute()
 
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: "{}"
-                    @Suppress("UNCHECKED_CAST")
-                    gson.fromJson(body, Map::class.java) as? Map<String, Any>
-                } else {
-                    Timber.e("Layout analysis failed: ${response.code}")
-                    null
-                }
-            } catch (e: Exception) {
-                Timber.e("Error analyzing layout: ${e.message}")
-                null
-            }
-        }
-    }
 
-    /**
-     * Compress screenshot for transmission
-     */
-    private fun compressScreenshot(bitmap: Bitmap): ByteArray {
-        val outputStream = ByteArrayOutputStream()
-        
-        // Scale down for faster transmission
-        val scaled = Bitmap.createScaledBitmap(
-            bitmap,
-            (bitmap.width * 0.7).toInt(),
-            (bitmap.height * 0.7).toInt(),
-            true
+
+
+    fun initialize(){
+
+
+        if(initialized)
+            return
+
+
+
+        Timber.d(
+            "Initializing AI Agent..."
         )
-        
-        scaled.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-        val bytes = outputStream.toByteArray()
-        outputStream.close()
-        
-        bitmap.recycle()
-        scaled.recycle()
-        
-        return bytes
+
+
+
+        taskPlanner =
+            TaskPlanner()
+
+
+
+        actionCoordinator =
+            ActionCoordinator(
+                context
+            )
+
+
+
+        messageHandler =
+            WebSocketMessageHandler(
+                actionCoordinator
+            )
+
+
+
+        setupWebSocket()
+
+
+
+        initialized = true
+
+
+        Timber.d(
+            "AI Agent ready"
+        )
+
     }
 
-    /**
-     * Create multipart request for file upload
-     */
-    private fun createMultipartRequest(imageBytes: ByteArray, context: String): okhttp3.RequestBody {
-        val boundary = "----BoundaryAIRobot${System.currentTimeMillis()}"
-        val body = StringBuilder()
 
-        // Image part
-        body.append("--$boundary\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"screenshot.jpg\"\r\n")
-        body.append("Content-Type: image/jpeg\r\n\r\n")
 
-        val requestBody = body.toString().toRequestBody()
-        
-        // Would need multipart body builder library for complete implementation
-        // For now, simplified version
-        return requestBody
-    }
 
-    /**
-     * Continuous screenshot analysis loop
-     */
-    fun startAnalysisLoop(
-        screenshotProvider: suspend () -> Bitmap,
-        onAnalysis: suspend (ScreenAnalysis) -> Unit,
-        interval: Long = 2000
-    ) {
-        scope.launch {
-            while (isActive) {
-                try {
-                    val screenshot = screenshotProvider()
-                    val analysis = analyzeScreenshot(screenshot)
-                    
-                    if (analysis != null) {
-                        onAnalysis(analysis)
+
+
+
+
+    private fun setupWebSocket(){
+
+
+        webSocketClient =
+            WebSocketClient(
+
+                onMessageReceived = { message ->
+
+
+                    Timber.d(
+                        "Backend message: $message"
+                    )
+
+
+
+                    val response =
+                        messageHandler
+                            .handleMessage(message)
+
+
+
+                    if(response.isNotEmpty()){
+
+
+                        webSocketClient.send(
+                            response
+                        )
+
+
                     }
-                    
-                    delay(interval)
-                } catch (e: Exception) {
-                    Timber.e("Analysis loop error: ${e.message}")
+
+
+                },
+
+
+
+                onConnected = {
+
+
+                    Timber.d(
+                        "Connected to AI backend"
+                    )
+
+
+                    sendStatus()
+
+
+                },
+
+
+
+                onDisconnected = {
+
+
+                    Timber.w(
+                        "Backend disconnected"
+                    )
+
+
+                },
+
+
+
+                onError = {
+
+
+                    Timber.e(
+                        "Backend error: $it"
+                    )
+
+
                 }
-            }
-        }
+
+            )
+
+
+        webSocketClient.connect()
+
+
     }
 
-    /**
-     * Stop the analysis loop
-     */
-    fun stopAnalysisLoop() {
-        scope.cancel()
+
+
+
+
+
+
+
+
+    fun startVoice(){
+
+
+        Timber.d(
+            "Starting voice"
+        )
+
+
+        val intent =
+            Intent(
+                context,
+                VoiceRecognitionService::class.java
+            )
+
+
+        context.startService(intent)
+
+
     }
+
+
+
+
+
+
+
+
+    fun startScreenCapture(){
+
+
+        Timber.d(
+            "Starting screen capture"
+        )
+
+
+
+        val intent =
+            Intent(
+                context,
+                ScreenCaptureService::class.java
+            )
+
+
+        context.startService(intent)
+
+
+    }
+
+
+
+
+
+
+
+
+
+    fun createTask(
+        taskId:String,
+        goal:String,
+        command:String
+    ){
+
+
+        val task =
+            taskPlanner.createTask(
+                taskId,
+                command,
+                goal
+            )
+
+
+
+        Timber.d(
+            "Task created ${task.task_id}"
+        )
+
+
+
+        val message =
+            mapOf(
+
+                "type" to "task_created",
+
+                "task" to task
+
+            )
+
+
+        webSocketClient.send(
+            gson.toJson(message)
+        )
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+    private fun sendStatus(){
+
+
+        val status =
+            mapOf(
+
+                "type" to "status",
+
+                "agent" to "android_robot",
+
+                "ready" to true,
+
+                "timestamp" to
+                    System.currentTimeMillis()
+
+            )
+
+
+        webSocketClient.send(
+            gson.toJson(status)
+        )
+
+
+    }
+
+
+
+
+
+
+
+
+
+    fun sendCommand(command:String){
+
+
+
+        val message =
+            mapOf(
+
+                "type" to "command",
+
+                "message" to command
+
+            )
+
+
+
+        webSocketClient.send(
+            gson.toJson(message)
+        )
+
+
+    }
+
+
+
+
+
+
+
+
+    fun stop(){
+
+
+        Timber.d(
+            "Stopping AI Agent"
+        )
+
+
+        try {
+
+
+            context.stopService(
+                Intent(
+                    context,
+                    VoiceRecognitionService::class.java
+                )
+            )
+
+
+            context.stopService(
+                Intent(
+                    context,
+                    ScreenCaptureService::class.java
+                )
+            )
+
+
+
+        }catch(e:Exception){
+
+            Timber.e(
+                "Stop error ${e.message}"
+            )
+
+        }
+
+
+
+        if(::webSocketClient.isInitialized){
+
+            webSocketClient.disconnect()
+
+        }
+
+
+        initialized = false
+
+
+    }
+
+
+
+
+
+
+
+
+    fun isReady():Boolean{
+
+        return initialized &&
+                webSocketClient.isConnectedToBackend()
+
+    }
+
+
+
 }
