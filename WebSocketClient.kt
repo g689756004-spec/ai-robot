@@ -6,16 +6,6 @@ import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * WebSocket client for communication between Android AI Agent and backend.
- *
- * Handles:
- * - Connecting to AI backend
- * - Sending screenshots
- * - Receiving AI actions
- * - Automatic reconnect
- * - Connection state tracking
- */
 class WebSocketClient(
     private val backendUrl: String = "ws://192.168.1.100:8000/ws/agent",
     private val onMessageReceived: (String) -> Unit = {},
@@ -31,34 +21,24 @@ class WebSocketClient(
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
 
-
     private var webSocket: WebSocket? = null
 
     private val scope = CoroutineScope(
         Dispatchers.IO + SupervisorJob()
     )
 
-
     private val connected = AtomicBoolean(false)
 
     private var shouldReconnect = true
-
-
     private var reconnectAttempts = 0
 
-
-    /**
-     * Connect to backend websocket
-     */
     fun connect() {
 
-        Timber.d("Connecting to backend: $backendUrl")
-
+        Timber.d("Connecting to $backendUrl")
 
         val request = Request.Builder()
             .url(backendUrl)
             .build()
-
 
         webSocket = client.newWebSocket(
             request,
@@ -66,128 +46,111 @@ class WebSocketClient(
         )
     }
 
+    private val socketListener =
+        object : WebSocketListener() {
+
+            override fun onOpen(
+                webSocket: WebSocket,
+                response: Response
+            ) {
+
+                Timber.d("WebSocket connected")
+
+                connected.set(true)
+                reconnectAttempts = 0
+
+                onConnected()
+            }
 
 
-    private val socketListener = object : WebSocketListener() {
+            override fun onMessage(
+                webSocket: WebSocket,
+                text: String
+            ) {
+
+                Timber.d(
+                    "Message received: ${text.take(200)}"
+                )
+
+                try {
+
+                    onMessageReceived(text)
+
+                } catch(e:Exception){
+
+                    Timber.e(
+                        "Message handler error ${e.message}"
+                    )
+                }
+            }
 
 
-        override fun onOpen(
-            webSocket: WebSocket,
-            response: Response
-        ) {
+            override fun onClosing(
+                webSocket: WebSocket,
+                code:Int,
+                reason:String
+            ){
 
-            Timber.d("WebSocket connected")
+                Timber.d(
+                    "Closing websocket $code $reason"
+                )
 
-            connected.set(true)
-
-            reconnectAttempts = 0
-
-            onConnected()
-        }
-
-
-
-        override fun onMessage(
-            webSocket: WebSocket,
-            text: String
-        ) {
-
-            Timber.d(
-                "Backend message: ${text.take(200)}"
-            )
-
-            try {
-
-                onMessageReceived(text)
-
-            } catch (e: Exception) {
-
-                Timber.e(
-                    "Message handler error: ${e.message}"
+                webSocket.close(
+                    1000,
+                    null
                 )
             }
-        }
 
 
+            override fun onClosed(
+                webSocket:WebSocket,
+                code:Int,
+                reason:String
+            ){
 
-        override fun onClosing(
-            webSocket: WebSocket,
-            code: Int,
-            reason: String
-        ) {
+                Timber.d(
+                    "Websocket closed"
+                )
 
-            Timber.d(
-                "Closing websocket: $code $reason"
-            )
+                connected.set(false)
 
-            webSocket.close(
-                1000,
-                null
-            )
-        }
+                onDisconnected()
 
-
-
-        override fun onClosed(
-            webSocket: WebSocket,
-            code: Int,
-            reason: String
-        ) {
-
-            Timber.d(
-                "WebSocket closed: $reason"
-            )
-
-            connected.set(false)
-
-            onDisconnected()
+                if(shouldReconnect){
+                    reconnect()
+                }
+            }
 
 
-            if (shouldReconnect) {
-                reconnect()
+            override fun onFailure(
+                webSocket:WebSocket,
+                t:Throwable,
+                response:Response?
+            ){
+
+                Timber.e(
+                    "Websocket failure ${t.message}"
+                )
+
+                connected.set(false)
+
+                onError(
+                    t.message ?: "Unknown websocket error"
+                )
+
+                if(shouldReconnect){
+                    reconnect()
+                }
             }
         }
 
 
+    fun send(message:String):Boolean {
 
-        override fun onFailure(
-            webSocket: WebSocket,
-            t: Throwable,
-            response: Response?
-        ) {
-
-            Timber.e(
-                "WebSocket failure: ${t.message}"
-            )
-
-
-            connected.set(false)
-
-
-            onError(
-                t.message ?: "Unknown websocket error"
-            )
-
-
-            if (shouldReconnect) {
-                reconnect()
-            }
-        }
-    }
-
-
-
-
-    /**
-     * Send text message
-     */
-    fun send(message: String): Boolean {
-
-
-        if (!connected.get()) {
+        if(!connected.get()){
 
             Timber.w(
-                "Cannot send. Websocket disconnected"
+                "Cannot send. Websocket offline"
             )
 
             return false
@@ -198,10 +161,10 @@ class WebSocketClient(
 
             webSocket?.send(message) ?: false
 
-        } catch (e: Exception) {
+        }catch(e:Exception){
 
             Timber.e(
-                "Send error: ${e.message}"
+                "Send failed ${e.message}"
             )
 
             false
@@ -209,28 +172,61 @@ class WebSocketClient(
     }
 
 
-
-
-    /**
-     * Send JSON object
-     */
-    fun sendJson(json: String) {
+    fun sendJson(json:String){
 
         send(json)
 
     }
 
 
+    fun sendScreenshot(
+        base64:String,
+        taskId:String="current_task"
+    ){
+
+        val message =
+            """
+            {
+              "type":"screenshot",
+              "task_id":"$taskId",
+              "screenshot":"$base64",
+              "timestamp":${System.currentTimeMillis()}
+            }
+            """.trimIndent()
 
 
-    /**
-     * Automatic reconnect
-     */
-    private fun reconnect() {
+        send(message)
+    }
 
+
+    fun sendVoiceCommand(
+        text:String
+    ){
+
+        val message =
+            """
+            {
+              "type":"voice_command",
+              "message":"$text",
+              "timestamp":${System.currentTimeMillis()}
+            }
+            """.trimIndent()
+
+
+        send(message)
+    }
+
+
+    fun isConnectedToBackend():Boolean{
+
+        return connected.get()
+
+    }
+
+
+    private fun reconnect(){
 
         reconnectAttempts++
-
 
         val delayTime =
             minOf(
@@ -240,55 +236,45 @@ class WebSocketClient(
 
 
         Timber.d(
-            "Reconnecting in ${delayTime}ms"
+            "Reconnect in ${delayTime}ms"
         )
 
 
         scope.launch {
 
-
             delay(delayTime)
 
 
-            if (shouldReconnect &&
+            if(
+                shouldReconnect &&
                 !connected.get()
-            ) {
+            ){
 
                 connect()
+
             }
         }
     }
 
 
+    fun reconnectNow(){
 
+        disconnect()
 
+        shouldReconnect=true
 
-    /**
-     * Check connection
-     */
-    fun isConnectedToBackend(): Boolean {
-
-        return connected.get()
+        connect()
 
     }
 
 
-
-
-
-    /**
-     * Disconnect permanently
-     */
-    fun disconnect() {
-
+    fun disconnect(){
 
         Timber.d(
-            "Disconnecting websocket"
+            "Disconnect websocket"
         )
 
-
-        shouldReconnect = false
-
+        shouldReconnect=false
 
         connected.set(false)
 
@@ -298,41 +284,18 @@ class WebSocketClient(
             "Client disconnect"
         )
 
-
-        webSocket = null
+        webSocket=null
     }
 
 
-
-
-
-    /**
-     * Restart connection
-     */
-    fun reconnectNow() {
-
-
-        disconnect()
-
-        shouldReconnect = true
-
-        connect()
-
-    }
-
-
-
-
-
-    fun destroy() {
-
+    fun destroy(){
 
         disconnect()
 
         scope.cancel()
 
-        client.dispatcher.executorService.shutdown()
-
+        client.dispatcher
+            .executorService
+            .shutdown()
     }
-
 }
