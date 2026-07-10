@@ -1,3 +1,4 @@
+```xml
 <?xml version="1.0" encoding="utf-8"?>
 
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -43,7 +44,10 @@
 
         android:padding="16dp"
 
+        android:gravity="center_vertical"
+
         android:background="@drawable/card_background">
+
 
 
         <View
@@ -64,9 +68,11 @@
 
             android:id="@+id/status_text"
 
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
 
             android:layout_height="wrap_content"
+
+            android:layout_weight="1"
 
             android:text="Initializing..."
 
@@ -99,6 +105,7 @@
 
 
 
+
     <TextView
 
         android:id="@+id/user_text"
@@ -123,8 +130,6 @@
 
 
 
-
-
     <TextView
 
         android:layout_width="match_parent"
@@ -143,26 +148,34 @@
 
 
 
-    <TextView
 
-        android:id="@+id/ai_response"
+    <ScrollView
 
         android:layout_width="match_parent"
 
         android:layout_height="120dp"
 
-        android:background="@drawable/card_background"
+        android:background="@drawable/card_background">
 
-        android:padding="16dp"
 
-        android:text="Waiting for AI..."
+        <TextView
 
-        android:textSize="16sp"
+            android:id="@+id/ai_response"
 
-        android:textColor="#555555"
+            android:layout_width="match_parent"
 
-        android:gravity="center_vertical"/>
+            android:layout_height="wrap_content"
 
+            android:padding="16dp"
+
+            android:text="Waiting for AI..."
+
+            android:textSize="16sp"
+
+            android:textColor="#555555"/>
+
+
+    </ScrollView>
 
 
 
@@ -223,6 +236,7 @@
 
 
 
+
         <Button
 
             android:id="@+id/stop_button"
@@ -233,14 +247,13 @@
 
             android:layout_weight="1"
 
-            android:text="Stop"
+            android:text="Stop Listening"
 
             android:layout_marginStart="8dp"/>
-
 
 
     </LinearLayout>
 
 
-
 </LinearLayout>
+```
