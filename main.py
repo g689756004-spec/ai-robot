@@ -1,6 +1,5 @@
 import logging
 import base64
-from typing import List
 
 from fastapi import FastAPI, WebSocket, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -11,21 +10,22 @@ import uvicorn
 
 from config import settings
 from groq import Groq
+
 from groq_vision import GroqVisionAnalyzer
 from task_orchestrator import orchestrator
 
 
-logging.basicConfig(
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
     title="AI Robot Agent Backend",
-    version="1.0"
+    description="Voice and AI backend for Android Robot Agent",
+    version="0.1.0"
 )
+
 
 
 app.add_middleware(
@@ -37,6 +37,7 @@ app.add_middleware(
 )
 
 
+
 groq_client = Groq(
     api_key=settings.groq_api_key
 )
@@ -45,16 +46,20 @@ groq_client = Groq(
 vision_analyzer = GroqVisionAnalyzer()
 
 
-active_connections:List[WebSocket] = []
+
+active_connections = set()
 
 
-CHAT_MODEL = "llama-3.1-8b-instant"
+
+CHAT_MODEL = settings.groq_chat_model
 
 
 
 class ChatRequest(BaseModel):
 
-    message:str
+    message: str
+
+
 
 
 
@@ -62,9 +67,12 @@ class ChatRequest(BaseModel):
 async def root():
 
     return {
-        "status":"running",
-        "service":"AI Robot Agent"
+        "status": "running",
+        "service": "AI Robot Backend",
+        "mode": "voice"
     }
+
+
 
 
 
@@ -72,16 +80,14 @@ async def root():
 async def health():
 
     return {
-        "status":"healthy"
+        "status": "healthy"
     }
 
 
 
 
-@app.post("/chat")
-async def chat(
-    request:ChatRequest
-):
+
+def ask_ai(message: str):
 
     try:
 
@@ -92,37 +98,62 @@ async def chat(
             messages=[
 
                 {
-                    "role":"system",
+                    "role": "system",
                     "content":
-                    "You are an AI robot assistant. Keep answers short."
+                    """
+                    You are an AI robot assistant.
+                    Speak naturally.
+                    Keep answers concise because they will be spoken aloud.
+                    """
                 },
 
                 {
-                    "role":"user",
-                    "content":request.message
+                    "role": "user",
+                    "content": message
                 }
 
             ],
+
+            temperature=0.7,
 
             max_tokens=300
 
         )
 
 
-        return {
-            "reply":
-            response
-            .choices[0]
-            .message
-            .content
-        }
+        return response.choices[0].message.content
+
 
 
     except Exception as e:
 
-        return {
-            "error":str(e)
-        }
+        logger.error(
+            f"AI error: {e}"
+        )
+
+        return "Sorry, I had a problem processing that."
+
+
+
+
+
+
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+
+    reply = ask_ai(
+        request.message
+    )
+
+
+    return {
+
+        "reply": reply
+
+    }
+
+
 
 
 
@@ -130,13 +161,17 @@ async def chat(
 
 @app.post("/api/analyze-screen")
 async def analyze_screen(
-    file:UploadFile = File(...),
-    context:str=None
+
+        file: UploadFile = File(...),
+
+        context: str = None
+
 ):
 
     try:
 
         image = await file.read()
+
 
         encoded = base64.b64encode(
             image
@@ -144,15 +179,21 @@ async def analyze_screen(
 
 
         result = vision_analyzer.analyze_screen(
+
             encoded,
+
             context
+
         )
 
 
-        return result
+        return JSONResponse(
+            content=result
+        )
 
 
     except Exception as e:
+
 
         return JSONResponse(
 
@@ -169,17 +210,26 @@ async def analyze_screen(
 
 
 
+
 @app.post("/api/task/create")
 async def create_task(
-    task_id:str,
-    goal:str,
-    user_command:str
+
+        task_id:str,
+
+        goal:str,
+
+        user_command:str
+
 ):
 
     task = orchestrator.create_task(
+
         task_id,
+
         goal,
+
         user_command
+
     )
 
 
@@ -189,10 +239,11 @@ async def create_task(
 
 
 
+
+
 @app.get("/api/task/{task_id}/status")
-async def task_status(
-    task_id:str
-):
+async def task_status(task_id:str):
+
 
     task = orchestrator.get_task_status(
         task_id
@@ -218,25 +269,31 @@ async def task_status(
 
 
 
+
+
 @app.websocket("/ws/agent")
 async def websocket_agent(
-    websocket:WebSocket
+
+        websocket:WebSocket
+
 ):
+
 
     await websocket.accept()
 
 
-    active_connections.append(
+    active_connections.add(
         websocket
     )
 
 
     logger.info(
-        "Android agent connected"
+        "Android connected"
     )
 
 
     try:
+
 
         while True:
 
@@ -244,108 +301,39 @@ async def websocket_agent(
             data = await websocket.receive_json()
 
 
-            msg_type = data.get(
+            message_type = data.get(
                 "type"
             )
 
 
             logger.info(
-                f"Message: {msg_type}"
+                f"Received: {message_type}"
             )
 
 
 
-            #
-            # SCREENSHOT FROM ANDROID
-            #
-            if msg_type == "screenshot":
 
 
-                image = data.get(
-                    "screenshot"
-                )
+            # =========================
+            # VOICE INPUT
+            # =========================
+
+            if message_type == "voice_command":
 
 
-                context = data.get(
-                    "context",
-                    ""
-                )
-
-
-                analysis = vision_analyzer.analyze_screen(
-
-                    image,
-
-                    context
-
-                )
-
-
-                action = analysis.get(
-
-                    "next_action",
-
-                    {
-                        "type":"wait"
-                    }
-
-                )
-
-
-                await websocket.send_json(
-
-                    {
-
-                        "type":"action",
-
-                        "action":action,
-
-                        "analysis":analysis
-
-                    }
-
-                )
-
-
-
-
-
-            #
-            # VOICE COMMAND
-            #
-            elif msg_type == "voice_command":
-
-
-                command = data.get(
+                user_text = data.get(
                     "message",
                     ""
-                )
-
-
-                task_id = data.get(
-                    "task_id"
                 )
 
 
                 logger.info(
-                    f"Voice command: {command}"
+                    f"User said: {user_text}"
                 )
 
 
-                if task_id is None:
-
-                    task_id="voice_task"
-
-
-
-                orchestrator.create_task(
-
-                    task_id,
-
-                    command,
-
-                    command
-
+                reply = ask_ai(
+                    user_text
                 )
 
 
@@ -353,84 +341,15 @@ async def websocket_agent(
 
                     {
 
-                        "type":"task_created",
+                        "type":
+                        "chat_response",
 
-                        "task_id":task_id
-
-                    }
-
-                )
-
-
-
-
-
-            #
-            # ACTION RESULT FROM DEVICE
-            #
-            elif msg_type == "action_result":
-
-
-                task_id=data.get(
-                    "task_id"
-                )
-
-
-                success=data.get(
-                    "success",
-                    False
-                )
-
-
-                result=data.get(
-                    "message",
-                    ""
-                )
-
-
-                orchestrator.log_step_result(
-
-                    task_id,
-
-                    result,
-
-                    not success
-
-                )
-
-
-                await websocket.send_json(
-
-                    {
-
-                        "type":"action_ack",
-
-                        "success":success
-
-                    }
-
-                )
-
-
-
-
-
-
-            #
-            # PING
-            #
-            elif msg_type=="ping":
-
-
-                await websocket.send_json(
-
-                    {
-
-                        "type":"pong",
+                        "message":
+                        reply,
 
                         "timestamp":
-                        data.get(
-                            "timestamp"
+                        int(
+                            __import__("time").time()*1000
                         )
 
                     }
@@ -441,20 +360,48 @@ async def websocket_agent(
 
 
 
-            #
-            # UNKNOWN
-            #
-            else:
+
+
+            # =========================
+            # SCREEN ANALYSIS FUTURE
+            # =========================
+
+            elif message_type == "screenshot":
+
+
+                analysis = vision_analyzer.analyze_screen(
+
+                    data.get(
+                        "screenshot"
+                    ),
+
+                    data.get(
+                        "context"
+                    )
+
+                )
 
 
                 await websocket.send_json(
 
                     {
 
-                        "type":"error",
+                        "type":
+                        "action",
 
-                        "message":
-                        f"Unknown type {msg_type}"
+                        "action":
+                        analysis.get(
+
+                            "next_action",
+
+                            {
+                                "type":"wait"
+                            }
+
+                        ),
+
+                        "analysis":
+                        analysis
 
                     }
 
@@ -462,11 +409,68 @@ async def websocket_agent(
 
 
 
+
+
+
+
+            # =========================
+            # ACTION RESULT
+            # =========================
+
+            elif message_type == "action_result":
+
+
+                task_id = data.get(
+                    "task_id"
+                )
+
+
+                orchestrator.log_step_result(
+
+                    task_id,
+
+                    data.get(
+                        "result",
+                        ""
+                    ),
+
+                    data.get(
+                        "status"
+                    )=="failed"
+
+                )
+
+
+
+
+
+
+            # =========================
+            # HEARTBEAT
+            # =========================
+
+            elif message_type == "ping":
+
+
+                await websocket.send_json(
+
+                    {
+
+                        "type":"pong"
+
+                    }
+
+                )
+
+
+
+
+
     except Exception as e:
 
 
         logger.error(
-            f"Websocket error {e}"
+            f"WebSocket error: {e}"
         )
 
 
@@ -474,11 +478,9 @@ async def websocket_agent(
     finally:
 
 
-        if websocket in active_connections:
-
-            active_connections.remove(
-                websocket
-            )
+        active_connections.discard(
+            websocket
+        )
 
 
         logger.info(
@@ -489,7 +491,9 @@ async def websocket_agent(
 
 
 
-if __name__=="__main__":
+
+
+if __name__ == "__main__":
 
 
     uvicorn.run(
