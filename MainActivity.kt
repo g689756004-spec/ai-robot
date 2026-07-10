@@ -1,14 +1,14 @@
 package com.robot.ai
 
+import android.Manifest
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
+import android.content.pm.PackageManager
 import android.os.Bundle
-import android.provider.Settings
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Button
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.robot.ai.databinding.ActivityMainBinding
-import com.robot.ai.services.ScreenCaptureService
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.robot.ai.services.VoiceRecognitionService
 import timber.log.Timber
 
@@ -16,126 +16,150 @@ import timber.log.Timber
 class MainActivity : AppCompatActivity() {
 
 
-    private lateinit var binding: ActivityMainBinding
+    private lateinit var statusText: TextView
+    private lateinit var listeningPrompt: TextView
+
+    private lateinit var startButton: Button
+    private lateinit var stopButton: Button
 
 
-    private val mediaProjectionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-
-
-            if (result.resultCode == RESULT_OK && result.data != null) {
-
-
-                val serviceIntent =
-                    Intent(
-                        this,
-                        ScreenCaptureService::class.java
-                    )
-
-
-                serviceIntent.putExtra(
-                    "resultCode",
-                    result.resultCode
-                )
-
-
-                serviceIntent.putExtra(
-                    "data",
-                    result.data
-                )
-
-
-                startForegroundService(
-                    serviceIntent
-                )
-
-
-                updateStatus(
-                    "Screen capture active"
-                )
-
-
-            } else {
-
-
-                Toast.makeText(
-                    this,
-                    "Screen capture permission denied",
-                    Toast.LENGTH_SHORT
-                ).show()
-
-            }
-
-        }
+    private val microphonePermissionCode = 1001
 
 
 
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
 
-        super.onCreate(
-            savedInstanceState
-        )
+    override fun onCreate(savedInstanceState: Bundle?) {
+
+        super.onCreate(savedInstanceState)
 
 
-        binding =
-            ActivityMainBinding.inflate(
-                layoutInflater
-            )
+        setContentView(R.layout.activity_main)
 
 
-        setContentView(
-            binding.root
-        )
+        initializeViews()
 
 
-        setupUI()
+        checkMicrophonePermission()
 
 
         startVoiceService()
 
 
-        requestAccessibilityService()
-
-
-        requestScreenCapture()
-
+        Timber.plant(
+            Timber.DebugTree()
+        )
 
     }
 
 
 
 
-    private fun setupUI() {
 
 
-        binding.settingsButton.setOnClickListener {
+
+    private fun initializeViews() {
 
 
-            startActivity(
-                Intent(
-                    Settings.ACTION_ACCESSIBILITY_SETTINGS
-                )
+        statusText =
+            findViewById(
+                R.id.status_text
             )
 
 
+        listeningPrompt =
+            findViewById(
+                R.id.listening_prompt
+            )
+
+
+        startButton =
+            findViewById(
+                R.id.settings_button
+            )
+
+
+        stopButton =
+            findViewById(
+                R.id.stop_button
+            )
+
+
+
+        startButton.text =
+            "Start Listening"
+
+
+
+        stopButton.text =
+            "Stop Listening"
+
+
+
+
+        startButton.setOnClickListener {
+
+
+            startListening()
+
+
         }
 
 
 
-        binding.stopButton.setOnClickListener {
 
 
-            stopAgent()
+        stopButton.setOnClickListener {
+
+
+            stopListening()
 
 
         }
 
 
     }
+
+
+
+
+
+
+
+
+
+    private fun checkMicrophonePermission() {
+
+
+        if(
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            )
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+
+
+            ActivityCompat.requestPermissions(
+
+                this,
+
+                arrayOf(
+                    Manifest.permission.RECORD_AUDIO
+                ),
+
+                microphonePermissionCode
+
+            )
+
+        }
+
+
+    }
+
+
+
+
+
 
 
 
@@ -143,155 +167,19 @@ class MainActivity : AppCompatActivity() {
     private fun startVoiceService() {
 
 
-        try {
-
-
-            val intent =
-                Intent(
-                    this,
-                    VoiceRecognitionService::class.java
-                )
-
-
-            startForegroundService(
-                intent
-            )
-
-
-            updateStatus(
-                "Voice AI running"
-            )
-
-
-            Timber.d(
-                "Voice service started"
-            )
-
-
-        } catch(e:Exception) {
-
-
-            Timber.e(
-                "Voice service error ${e.message}"
-            )
-
-        }
-
-
-    }
-
-
-
-
-    private fun requestScreenCapture() {
-
-
-        try {
-
-
-            val manager =
-                getSystemService(
-                    MEDIA_PROJECTION_SERVICE
-                ) as MediaProjectionManager
-
-
-
-            val intent =
-                manager.createScreenCaptureIntent()
-
-
-
-            mediaProjectionLauncher.launch(
-                intent
-            )
-
-
-        } catch(e:Exception) {
-
-
-            Timber.e(
-                "Screen capture error ${e.message}"
-            )
-
-
-        }
-
-
-    }
-
-
-
-
-
-    private fun requestAccessibilityService() {
-
-
-        val enabled =
-            Settings.Secure.getString(
-                contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            )
-
-
-        if(
-            enabled == null ||
-            !enabled.contains(
-                packageName
-            )
-        ) {
-
-
-            Toast.makeText(
+        val intent =
+            Intent(
                 this,
-                "Enable AI Robot Accessibility Service",
-                Toast.LENGTH_LONG
-            ).show()
-
-
-        }
-
-
-    }
-
-
-
-
-    private fun stopAgent() {
-
-
-        try {
-
-
-            stopService(
-                Intent(
-                    this,
-                    VoiceRecognitionService::class.java
-                )
+                VoiceRecognitionService::class.java
             )
 
 
-            stopService(
-                Intent(
-                    this,
-                    ScreenCaptureService::class.java
-                )
-            )
+        startService(intent)
 
 
-            updateStatus(
-                "Agent stopped"
-            )
 
-
-        } catch(e:Exception) {
-
-
-            Timber.e(
-                "Stop error ${e.message}"
-            )
-
-
-        }
+        statusText.text =
+            "Voice service running"
 
 
     }
@@ -300,26 +188,118 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun updateStatus(
-        text:String
+
+
+
+
+    private fun startListening() {
+
+
+        statusText.text =
+            "Listening..."
+
+
+        listeningPrompt.text =
+            "🎤 Listening..."
+
+
+
+        // Service will keep listening
+
+        Timber.d(
+            "Start listening pressed"
+        )
+
+    }
+
+
+
+
+
+
+
+
+
+    private fun stopListening() {
+
+
+        statusText.text =
+            "Stopped"
+
+
+        listeningPrompt.text =
+            "Say something..."
+
+
+
+        Timber.d(
+            "Stop listening pressed"
+        )
+
+    }
+
+
+
+
+
+
+
+
+
+    override fun onRequestPermissionsResult(
+
+        requestCode:Int,
+
+        permissions:Array<out String>,
+
+        grantResults:IntArray
+
     ) {
 
 
-        runOnUiThread {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
 
 
-            binding.statusText.text =
-                text
+
+        if(
+            requestCode ==
+            microphonePermissionCode
+        ) {
 
 
-            binding.listeningPrompt.text =
-                text
+            if(
+                grantResults.isNotEmpty()
+                &&
+                grantResults[0] ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+
+
+                statusText.text =
+                    "Microphone ready"
+
+
+            } else {
+
+
+                statusText.text =
+                    "Microphone permission denied"
+
+
+            }
 
 
         }
 
 
     }
+
+
+
 
 
 
@@ -327,10 +307,12 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
 
 
-        stopAgent()
-
-
         super.onDestroy()
+
+
+        Timber.d(
+            "MainActivity destroyed"
+        )
 
     }
 
