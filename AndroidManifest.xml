@@ -1,83 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
 
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Network communication -->
+    <uses-permission android:name="android.permission.INTERNET"/>
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Voice -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Background services -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+
+    <!-- Screen capture (future AI vision) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+
 
 
     <application
+
         android:allowBackup="true"
+
         android:icon="@mipmap/ic_launcher"
-        android:label="AI Robot Agent"
-        android:roundIcon="@mipmap/ic_launcher_round"
+
+        android:label="AI Robot"
+
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+
+        android:theme="@style/Theme.AIRobot">
 
 
+        <!-- Main UI -->
         <activity
+
             android:name=".MainActivity"
+
             android:exported="true">
+
 
             <intent-filter>
 
-                <action android:name="android.intent.action.MAIN" />
+                <action android:name="android.intent.action.MAIN"/>
 
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER"/>
 
             </intent-filter>
+
 
         </activity>
 
 
 
-        <!-- Voice AI Service -->
+        <!-- Voice communication service -->
         <service
+
             android:name=".services.VoiceRecognitionService"
+
             android:enabled="true"
+
             android:exported="false"
-            android:foregroundServiceType="microphone" />
+
+            android:foregroundServiceType="microphone"/>
 
 
 
-        <!-- Screen Capture AI Vision Service -->
+        <!-- Screen capture service -->
         <service
+
             android:name=".services.ScreenCaptureService"
+
             android:enabled="true"
+
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+
+            android:foregroundServiceType="mediaProjection"/>
 
 
 
-        <!-- Accessibility AI Control Service -->
+        <!-- Accessibility AI control service -->
         <service
+
             android:name=".services.AIAccessibilityService"
+
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+
             android:exported="true">
+
 
             <intent-filter>
 
-                <action android:name="android.accessibilityservice.AccessibilityService" />
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
 
             </intent-filter>
 
 
             <meta-data
+
                 android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
+
+                android:resource="@xml/accessibility_service_config"/>
+
 
         </service>
 
 
 
     </application>
+
 
 </manifest>
