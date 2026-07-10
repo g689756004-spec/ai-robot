@@ -9,208 +9,555 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
 import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
 import android.util.DisplayMetrics
 import android.view.WindowManager
-import androidx.annotation.RequiresApi
+import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
+import com.robot.ai.network.WebSocketClient
 import kotlinx.coroutines.*
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
 
-/**
- * Service that captures real-time screenshots from the tablet screen
- * and sends them to the backend for AI analysis
- */
-@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+
 class ScreenCaptureService : Service() {
 
+
     private var mediaProjection: MediaProjection? = null
+
     private var virtualDisplay: VirtualDisplay? = null
+
     private var imageReader: ImageReader? = null
-    private var isCapturing = false
-    private val scope = CoroutineScope(Dispatchers.Default + Job())
+
+
+    private lateinit var webSocketClient: WebSocketClient
+
+
+    private val gson = Gson()
+
+
+    private val scope =
+        CoroutineScope(
+            Dispatchers.IO + SupervisorJob()
+        )
+
+
+    private var capturing = false
+
+
 
     private val displayMetrics: DisplayMetrics
         get() {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val metrics = DisplayMetrics()
-            windowManager.defaultDisplay.getRealMetrics(metrics)
-            return metrics
+
+            val wm =
+                getSystemService(
+                    Context.WINDOW_SERVICE
+                ) as WindowManager
+
+
+            return DisplayMetrics().also {
+
+                wm.defaultDisplay.getRealMetrics(it)
+
+            }
+
         }
 
-    override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Timber.d("ScreenCaptureService started")
-        
-        // Get MediaProjectionManager
-        val projectionManager = getSystemService(
-            Context.MEDIA_PROJECTION_SERVICE
-        ) as? MediaProjectionManager ?: run {
-            Timber.e("Could not get MediaProjectionManager")
-            stopSelf()
-            return START_NOT_STICKY
-        }
 
-        // In a real app, you'd start this from MainActivity with user permission
-        // via startActivityForResult with REQUEST_CODE
-        return START_STICKY
+
+
+
+    override fun onBind(intent: Intent?): IBinder? {
+
+        return null
+
     }
 
-    /**
-     * Start screen capture with the given MediaProjection
-     * Call this after getting user permission in MainActivity
-     */
-    fun startCapture(mediaProjection: MediaProjection) {
-        if (isCapturing) {
-            Timber.w("Screen capture already running")
+
+
+
+
+
+    override fun onCreate() {
+
+        super.onCreate()
+
+
+        createNotification()
+
+
+        webSocketClient =
+            WebSocketClient()
+
+
+        webSocketClient.connect()
+
+
+    }
+
+
+
+
+
+
+    private fun createNotification() {
+
+
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+
+            val notification =
+                NotificationCompat.Builder(
+                    this,
+                    "AI_AGENT_CHANNEL"
+                )
+                    .setContentTitle(
+                        "AI Vision Active"
+                    )
+                    .setContentText(
+                        "Analyzing screen"
+                    )
+                    .setSmallIcon(
+                        android.R.drawable.ic_menu_view
+                    )
+                    .build()
+
+
+            startForeground(
+                2001,
+                notification
+            )
+
+        }
+
+    }
+
+
+
+
+
+
+    fun startCapture(
+        projection: MediaProjection
+    ) {
+
+
+        if(capturing)
             return
-        }
 
-        this.mediaProjection = mediaProjection
+
+
+        mediaProjection =
+            projection
+
+
+
         setupImageReader()
-        startCapturingLoop()
-        Timber.d("Screen capture started")
+
+
+
+        capturing = true
+
+
+
+        Timber.d(
+            "Screen capture started"
+        )
+
     }
+
+
+
+
+
+
 
     private fun setupImageReader() {
-        val metrics = displayMetrics
-        val width = metrics.widthPixels
-        val height = metrics.heightPixels
 
-        Timber.d("Setting up ImageReader: ${width}x${height}")
 
-        imageReader = ImageReader.newInstance(
-            width,
-            height,
-            PixelFormat.RGBA_8888,
-            2
-        )
+        val metrics =
+            displayMetrics
 
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "ScreenCapture",
-            width,
-            height,
-            metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            null
-        )
 
-        imageReader?.setOnImageAvailableListener({ reader ->
-            try {
-                val image = reader.acquireLatestImage()
-                if (image != null) {
-                    val bitmap = convertImageToBitmap(image)
-                    if (bitmap != null) {
-                        // Send in coroutine to avoid blocking
-                        scope.launch {
-                            sendScreenshotToBackend(bitmap)
-                        }
-                    }
+        val width =
+            metrics.widthPixels
+
+
+        val height =
+            metrics.heightPixels
+
+
+
+
+        imageReader =
+            ImageReader.newInstance(
+
+                width,
+
+                height,
+
+                PixelFormat.RGBA_8888,
+
+                2
+
+            )
+
+
+
+
+        virtualDisplay =
+            mediaProjection?.createVirtualDisplay(
+
+                "AI_SCREEN_CAPTURE",
+
+                width,
+
+                height,
+
+                metrics.densityDpi,
+
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+
+                imageReader!!.surface,
+
+                null,
+
+                null
+
+            )
+
+
+
+
+        imageReader?.setOnImageAvailableListener(
+            { reader ->
+
+
+                try {
+
+
+                    val image =
+                        reader.acquireLatestImage()
+                            ?: return@setOnImageAvailableListener
+
+
+
+                    val bitmap =
+                        imageToBitmap(
+                            image
+                        )
+
+
                     image.close()
+
+
+
+                    bitmap?.let {
+
+
+                        scope.launch {
+
+
+                            sendScreenshot(
+                                it
+                            )
+
+
+                        }
+
+
+                    }
+
+
+
+                } catch(e:Exception) {
+
+
+                    Timber.e(
+                        "Capture error ${e.message}"
+                    )
+
                 }
-            } catch (e: Exception) {
-                Timber.e("Error processing image: ${e.message}")
-            }
-        }, null)
+
+
+            },
+
+            null
+
+        )
+
+
     }
 
-    private fun convertImageToBitmap(image: android.media.Image): Bitmap? {
+
+
+
+
+
+
+
+    private fun imageToBitmap(
+        image: android.media.Image
+    ): Bitmap? {
+
+
         return try {
-            val planes = image.planes
-            val buffer = planes[0].buffer
+
+
+            val plane =
+                image.planes[0]
+
+
+            val buffer =
+                plane.buffer
+
+
+            val pixelStride =
+                plane.pixelStride
+
+
+            val rowStride =
+                plane.rowStride
+
+
+            val rowPadding =
+                rowStride -
+                pixelStride *
+                image.width
+
+
+
+            val bitmap =
+                Bitmap.createBitmap(
+
+                    image.width +
+                    rowPadding /
+                    pixelStride,
+
+                    image.height,
+
+                    Bitmap.Config.ARGB_8888
+
+                )
+
+
+
             buffer.rewind()
 
-            val pixelStride = planes[0].pixelStride
-            val rowPadding = planes[0].rowPadding
-            val w = image.width
-            val h = image.height
 
-            val bitmap = Bitmap.createBitmap(
-                w + rowPadding / pixelStride,
-                h,
-                Bitmap.Config.ARGB_8888
+            bitmap.copyPixelsFromBuffer(
+                buffer
             )
-            bitmap.copyPixelsFromBuffer(buffer)
-            
-            // Crop to actual size
-            val croppedBitmap = Bitmap.createBitmap(bitmap, 0, 0, w, h)
-            bitmap.recycle()
-            croppedBitmap
-        } catch (e: Exception) {
-            Timber.e("Error converting image to bitmap: ${e.message}")
-            null
-        }
-    }
 
-    private suspend fun sendScreenshotToBackend(bitmap: Bitmap) {
-        try {
-            // Compress bitmap to PNG
-            val outputStream = ByteArrayOutputStream()
-            
-            // Quality reduction for faster transmission
-            val compressed = Bitmap.createScaledBitmap(
+
+
+            Bitmap.createBitmap(
                 bitmap,
-                (bitmap.width * 0.7).toInt(),
-                (bitmap.height * 0.7).toInt(),
-                true
-            )
-            
-            compressed.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
-            val imageBytes = outputStream.toByteArray()
-            outputStream.close()
+                0,
+                0,
+                image.width,
+                image.height
+            ).also {
 
-            // Encode to Base64
-            val imageBase64 = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
-            
-            Timber.d("Screenshot compressed: ${imageBytes.size / 1024} KB")
+                bitmap.recycle()
 
-            // Prepare WebSocket message
-            val message = mapOf(
-                "type" to "screenshot",
-                "task_id" to "current_task",
-                "screenshot" to imageBase64,
-                "timestamp" to System.currentTimeMillis(),
-                "width" to bitmap.width,
-                "height" to bitmap.height
+            }
+
+
+        } catch(e:Exception) {
+
+
+            Timber.e(
+                "Bitmap error ${e.message}"
             )
 
-            val json = Gson().toJson(message)
-            
-            // Send via WebSocket (this would be injected in real implementation)
-            // For now, just log
-            Timber.d("Ready to send screenshot: ${json.length} bytes")
 
-            compressed.recycle()
+            null
+
+        }
+
+
+    }
+
+
+
+
+
+
+
+
+    private suspend fun sendScreenshot(
+        bitmap: Bitmap
+    ) {
+
+
+        try {
+
+
+            val scaled =
+                Bitmap.createScaledBitmap(
+
+                    bitmap,
+
+                    (bitmap.width * 0.6).toInt(),
+
+                    (bitmap.height * 0.6).toInt(),
+
+                    true
+
+                )
+
+
+
+            val stream =
+                ByteArrayOutputStream()
+
+
+
+            scaled.compress(
+
+                Bitmap.CompressFormat.JPEG,
+
+                65,
+
+                stream
+
+            )
+
+
+
+            val bytes =
+                stream.toByteArray()
+
+
+
+            val encoded =
+                Base64.encodeToString(
+
+                    bytes,
+
+                    Base64.NO_WRAP
+
+                )
+
+
+
+
+
+            val message =
+                mapOf(
+
+                    "type" to "screenshot",
+
+                    "task_id" to "current_task",
+
+                    "screenshot" to encoded,
+
+                    "timestamp" to
+                        System.currentTimeMillis()
+
+                )
+
+
+
+            webSocketClient.send(
+
+                gson.toJson(message)
+
+            )
+
+
+
+            Timber.d(
+                "Screenshot sent ${bytes.size / 1024} KB"
+            )
+
+
+
+            stream.close()
+
+
+            scaled.recycle()
+
             bitmap.recycle()
 
-        } catch (e: Exception) {
-            Timber.e("Error sending screenshot: ${e.message}")
+
+
+        } catch(e:Exception) {
+
+
+            Timber.e(
+                "Send screenshot error ${e.message}"
+            )
+
+
         }
+
+
     }
 
-    private fun startCapturingLoop() {
-        isCapturing = true
-        Timber.d("Capture loop started")
-    }
+
+
+
+
+
+
 
     fun stopCapture() {
-        isCapturing = false
+
+
+        capturing = false
+
+
         virtualDisplay?.release()
+
         imageReader?.close()
+
         mediaProjection?.stop()
-        Timber.d("Screen capture stopped")
+
+
+
+        virtualDisplay = null
+
+        imageReader = null
+
+        mediaProjection = null
+
+
+
+        Timber.d(
+            "Screen capture stopped"
+        )
+
+
     }
 
+
+
+
+
+
+
     override fun onDestroy() {
+
+
         stopCapture()
+
+
+        webSocketClient.disconnect()
+
+
         scope.cancel()
+
+
+
         super.onDestroy()
+
+
     }
+
+
 }
