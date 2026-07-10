@@ -1,3 +1,4 @@
+```kotlin
 package com.robot.ai
 
 import android.Manifest
@@ -27,31 +28,19 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
 
+        Timber.plant(Timber.DebugTree())
 
         setContentView(R.layout.activity_main)
 
-
         initializeViews()
-
 
         checkMicrophonePermission()
 
-
-        startVoiceService()
-
-
-        Timber.plant(
-            Timber.DebugTree()
-        )
-
     }
-
-
 
 
 
@@ -96,6 +85,7 @@ class MainActivity : AppCompatActivity() {
 
 
 
+
         startButton.setOnClickListener {
 
 
@@ -103,6 +93,7 @@ class MainActivity : AppCompatActivity() {
 
 
         }
+
 
 
 
@@ -126,16 +117,23 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
     private fun checkMicrophonePermission() {
 
 
-        if(
+        val permission =
+
             ContextCompat.checkSelfPermission(
+
                 this,
+
                 Manifest.permission.RECORD_AUDIO
+
             )
-            != PackageManager.PERMISSION_GRANTED
+
+
+
+        if(
+            permission != PackageManager.PERMISSION_GRANTED
         ) {
 
 
@@ -151,6 +149,14 @@ class MainActivity : AppCompatActivity() {
 
             )
 
+
+        }
+        else {
+
+
+            startVoiceService()
+
+
         }
 
 
@@ -163,23 +169,33 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
     private fun startVoiceService() {
 
 
-        val intent =
+        val serviceIntent =
+
             Intent(
+
                 this,
+
                 VoiceRecognitionService::class.java
+
             )
 
 
-        startService(intent)
+
+        ContextCompat.startForegroundService(
+
+            this,
+
+            serviceIntent
+
+        )
 
 
 
         statusText.text =
-            "Voice service running"
+            "Voice service ready"
 
 
     }
@@ -191,24 +207,42 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
     private fun startListening() {
 
 
-        statusText.text =
-            "Listening..."
-
-
-        listeningPrompt.text =
-            "🎤 Listening..."
+        val service =
+            VoiceRecognitionService.instance
 
 
 
-        // Service will keep listening
+        if(service != null) {
 
-        Timber.d(
-            "Start listening pressed"
-        )
+
+            service.startListening()
+
+
+
+            statusText.text =
+                "Listening..."
+
+
+
+            listeningPrompt.text =
+                "🎤 Listening..."
+
+
+
+        }
+        else {
+
+
+            statusText.text =
+                "Voice service not ready"
+
+
+
+        }
+
 
     }
 
@@ -223,18 +257,30 @@ class MainActivity : AppCompatActivity() {
     private fun stopListening() {
 
 
-        statusText.text =
-            "Stopped"
-
-
-        listeningPrompt.text =
-            "Say something..."
+        val service =
+            VoiceRecognitionService.instance
 
 
 
-        Timber.d(
-            "Stop listening pressed"
-        )
+        if(service != null) {
+
+
+            service.stopListening()
+
+
+
+            statusText.text =
+                "Stopped"
+
+
+
+            listeningPrompt.text =
+                "Say something..."
+
+
+
+        }
+
 
     }
 
@@ -248,26 +294,29 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(
 
-        requestCode:Int,
+        requestCode: Int,
 
-        permissions:Array<out String>,
+        permissions: Array<out String>,
 
-        grantResults:IntArray
+        grantResults: IntArray
 
     ) {
 
 
         super.onRequestPermissionsResult(
+
             requestCode,
+
             permissions,
+
             grantResults
+
         )
 
 
 
         if(
-            requestCode ==
-            microphonePermissionCode
+            requestCode == microphonePermissionCode
         ) {
 
 
@@ -280,14 +329,21 @@ class MainActivity : AppCompatActivity() {
 
 
                 statusText.text =
-                    "Microphone ready"
+                    "Microphone permission granted"
 
 
-            } else {
+
+                startVoiceService()
+
+
+
+            }
+            else {
 
 
                 statusText.text =
                     "Microphone permission denied"
+
 
 
             }
@@ -304,16 +360,22 @@ class MainActivity : AppCompatActivity() {
 
 
 
+
+
     override fun onDestroy() {
 
 
         super.onDestroy()
 
 
+
         Timber.d(
             "MainActivity destroyed"
         )
 
+
     }
 
+
 }
+```
