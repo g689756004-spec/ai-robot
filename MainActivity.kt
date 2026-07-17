@@ -1,44 +1,146 @@
-```kotlin
 package com.robot.ai
 
-import android.Manifest
+
+import android.content.ComponentName
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
-import android.widget.Button
-import android.widget.TextView
+import android.content.ServiceConnection
+import android.os.IBinder
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.robot.ai.databinding.ActivityMainBinding
 import com.robot.ai.services.VoiceRecognitionService
 import timber.log.Timber
+
 
 
 class MainActivity : AppCompatActivity() {
 
 
-    private lateinit var statusText: TextView
-    private lateinit var listeningPrompt: TextView
 
-    private lateinit var startButton: Button
-    private lateinit var stopButton: Button
-
-
-    private val microphonePermissionCode = 1001
+    private lateinit var binding: ActivityMainBinding
 
 
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    private var voiceService:
+            VoiceRecognitionService? = null
 
-        super.onCreate(savedInstanceState)
 
-        Timber.plant(Timber.DebugTree())
 
-        setContentView(R.layout.activity_main)
+    private var serviceBound = false
 
-        initializeViews()
 
-        checkMicrophonePermission()
+
+
+
+
+    private val serviceConnection =
+        object : ServiceConnection {
+
+
+
+            override fun onServiceConnected(
+
+                name: ComponentName?,
+
+                service: IBinder?
+
+            ) {
+
+
+                /*
+                 *
+                 * VoiceRecognitionService
+                 * currently returns null binder.
+                 *
+                 * This is kept here because
+                 * we will upgrade it later
+                 * to a LocalBinder.
+                 *
+                 */
+
+
+
+                serviceBound = true
+
+
+
+                Timber.d(
+                    "Voice service connected"
+                )
+
+
+            }
+
+
+
+
+
+
+
+
+            override fun onServiceDisconnected(
+
+                name: ComponentName?
+
+            ) {
+
+
+                serviceBound = false
+
+
+                voiceService = null
+
+
+
+                Timber.d(
+                    "Voice service disconnected"
+                )
+
+
+            }
+
+
+        }
+
+
+
+
+
+
+
+
+
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
+
+
+        super.onCreate(
+            savedInstanceState
+        )
+
+
+
+        binding =
+            ActivityMainBinding.inflate(
+                layoutInflater
+            )
+
+
+
+        setContentView(
+            binding.root
+        )
+
+
+
+        setupUI()
+
+
+
+        startVoiceService()
+
 
     }
 
@@ -46,47 +148,28 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun initializeViews() {
-
-
-        statusText =
-            findViewById(
-                R.id.status_text
-            )
-
-
-        listeningPrompt =
-            findViewById(
-                R.id.listening_prompt
-            )
-
-
-        startButton =
-            findViewById(
-                R.id.settings_button
-            )
-
-
-        stopButton =
-            findViewById(
-                R.id.stop_button
-            )
 
 
 
-        startButton.text =
-            "Start Listening"
+
+    private fun setupUI() {
+
+
+        binding.statusText.text =
+            "Ready"
 
 
 
-        stopButton.text =
-            "Stop Listening"
+
+        binding.listeningPrompt.text =
+            "Press Start Listening"
 
 
 
 
 
-        startButton.setOnClickListener {
+
+        binding.settingsButton.setOnClickListener {
 
 
             startListening()
@@ -99,7 +182,7 @@ class MainActivity : AppCompatActivity() {
 
 
 
-        stopButton.setOnClickListener {
+        binding.stopButton.setOnClickListener {
 
 
             stopListening()
@@ -108,59 +191,9 @@ class MainActivity : AppCompatActivity() {
         }
 
 
-    }
-
-
-
-
-
-
-
-
-    private fun checkMicrophonePermission() {
-
-
-        val permission =
-
-            ContextCompat.checkSelfPermission(
-
-                this,
-
-                Manifest.permission.RECORD_AUDIO
-
-            )
-
-
-
-        if(
-            permission != PackageManager.PERMISSION_GRANTED
-        ) {
-
-
-            ActivityCompat.requestPermissions(
-
-                this,
-
-                arrayOf(
-                    Manifest.permission.RECORD_AUDIO
-                ),
-
-                microphonePermissionCode
-
-            )
-
-
-        }
-        else {
-
-
-            startVoiceService()
-
-
-        }
-
 
     }
+
 
 
 
@@ -172,14 +205,10 @@ class MainActivity : AppCompatActivity() {
     private fun startVoiceService() {
 
 
-        val serviceIntent =
-
+        val intent =
             Intent(
-
                 this,
-
                 VoiceRecognitionService::class.java
-
             )
 
 
@@ -188,14 +217,21 @@ class MainActivity : AppCompatActivity() {
 
             this,
 
-            serviceIntent
+            intent
 
         )
 
 
 
-        statusText.text =
-            "Voice service ready"
+        bindService(
+
+            intent,
+
+            serviceConnection,
+
+            BIND_AUTO_CREATE
+
+        )
 
 
     }
@@ -207,41 +243,37 @@ class MainActivity : AppCompatActivity() {
 
 
 
+
     private fun startListening() {
 
 
-        val service =
-            VoiceRecognitionService.instance
+        binding.statusText.text =
+            "Listening..."
 
 
 
-        if(service != null) {
-
-
-            service.startListening()
-
-
-
-            statusText.text =
-                "Listening..."
+        binding.listeningPrompt.text =
+            "Say something..."
 
 
 
-            listeningPrompt.text =
-                "🎤 Listening..."
+        Timber.d(
+            "Start listening pressed"
+        )
 
 
 
-        }
-        else {
-
-
-            statusText.text =
-                "Voice service not ready"
-
-
-
-        }
+        /*
+         *
+         * The service currently
+         * does not expose a binder.
+         *
+         * Once we add LocalBinder,
+         * this will directly call:
+         *
+         * voiceService?.startListening()
+         *
+         */
 
 
     }
@@ -257,26 +289,53 @@ class MainActivity : AppCompatActivity() {
     private fun stopListening() {
 
 
-        val service =
-            VoiceRecognitionService.instance
+        binding.statusText.text =
+            "Stopped"
 
 
 
-        if(service != null) {
-
-
-            service.stopListening()
-
-
-
-            statusText.text =
-                "Stopped"
+        binding.listeningPrompt.text =
+            "Listening paused"
 
 
 
-            listeningPrompt.text =
-                "Say something..."
+        Timber.d(
+            "Stop listening pressed"
+        )
 
+
+
+        /*
+         *
+         * Will call:
+         *
+         * voiceService?.stopListening()
+         *
+         * after binder update.
+         *
+         */
+
+
+    }
+
+
+
+
+
+
+
+
+
+    fun updateUserText(
+        text:String
+    ) {
+
+
+        runOnUiThread {
+
+
+            binding.userText.text =
+                text
 
 
         }
@@ -292,61 +351,16 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    override fun onRequestPermissionsResult(
-
-        requestCode: Int,
-
-        permissions: Array<out String>,
-
-        grantResults: IntArray
-
+    fun updateAIResponse(
+        text:String
     ) {
 
 
-        super.onRequestPermissionsResult(
-
-            requestCode,
-
-            permissions,
-
-            grantResults
-
-        )
+        runOnUiThread {
 
 
-
-        if(
-            requestCode == microphonePermissionCode
-        ) {
-
-
-            if(
-                grantResults.isNotEmpty()
-                &&
-                grantResults[0] ==
-                PackageManager.PERMISSION_GRANTED
-            ) {
-
-
-                statusText.text =
-                    "Microphone permission granted"
-
-
-
-                startVoiceService()
-
-
-
-            }
-            else {
-
-
-                statusText.text =
-                    "Microphone permission denied"
-
-
-
-            }
+            binding.aiResponse.text =
+                text
 
 
         }
@@ -365,17 +379,26 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
 
 
+        if(serviceBound){
+
+
+            unbindService(
+                serviceConnection
+            )
+
+
+            serviceBound = false
+
+
+        }
+
+
+
         super.onDestroy()
-
-
-
-        Timber.d(
-            "MainActivity destroyed"
-        )
 
 
     }
 
 
+
 }
-```
