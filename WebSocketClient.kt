@@ -9,31 +9,35 @@ import java.util.concurrent.TimeUnit
 
 class WebSocketClient(
 
-    private val backendUrl: String =
-        "wss://YOUR_RENDER_APP.onrender.com/ws/agent",
+
+    private val backendUrl: String,
 
 
-    private val onMessageReceived: (String) -> Unit = {},
+    private val onMessageReceived: (String) -> Unit,
 
 
-    private val onConnected: () -> Unit = {},
+    private val onConnected: () -> Unit,
 
 
-    private val onDisconnected: () -> Unit = {},
+    private val onDisconnected: () -> Unit,
 
 
-    private val onError: (String) -> Unit = {}
+    private val onError: (String) -> Unit
+
 
 ) {
 
 
 
-    private val client: OkHttpClient =
+    private var webSocket: WebSocket? = null
 
+
+
+    private val client: OkHttpClient =
         OkHttpClient.Builder()
 
             .connectTimeout(
-                30,
+                20,
                 TimeUnit.SECONDS
             )
 
@@ -43,6 +47,11 @@ class WebSocketClient(
             )
 
             .writeTimeout(
+                20,
+                TimeUnit.SECONDS
+            )
+
+            .pingInterval(
                 30,
                 TimeUnit.SECONDS
             )
@@ -51,7 +60,7 @@ class WebSocketClient(
 
 
 
-    private var webSocket: WebSocket? = null
+
 
 
     private var connected = false
@@ -60,26 +69,22 @@ class WebSocketClient(
 
 
 
+
     fun connect() {
 
 
-        if(connected) {
-
-            Timber.d(
-                "WebSocket already connected"
-            )
-
-            return
-
-        }
+        Timber.d(
+            "Connecting websocket: $backendUrl"
+        )
 
 
 
         val request =
-
             Request.Builder()
 
-                .url(backendUrl)
+                .url(
+                    backendUrl
+                )
 
                 .build()
 
@@ -87,129 +92,16 @@ class WebSocketClient(
 
 
 
-        webSocket =
 
+        webSocket =
             client.newWebSocket(
 
                 request,
 
-                object : WebSocketListener(){
-
-
-
-                    override fun onOpen(
-
-                        webSocket: WebSocket,
-
-                        response: Response
-
-                    ) {
-
-
-                        connected = true
-
-
-                        Timber.d(
-                            "WebSocket connected"
-                        )
-
-
-                        onConnected()
-
-                    }
-
-
-
-
-
-
-
-                    override fun onMessage(
-
-                        webSocket: WebSocket,
-
-                        text: String
-
-                    ) {
-
-
-                        Timber.d(
-                            "WS message: ${text.take(200)}"
-                        )
-
-
-                        onMessageReceived(
-                            text
-                        )
-
-                    }
-
-
-
-
-
-
-
-                    override fun onClosed(
-
-                        webSocket: WebSocket,
-
-                        code: Int,
-
-                        reason: String
-
-                    ) {
-
-
-                        connected = false
-
-
-                        Timber.d(
-                            "WebSocket closed: $reason"
-                        )
-
-
-                        onDisconnected()
-
-                    }
-
-
-
-
-
-
-
-
-                    override fun onFailure(
-
-                        webSocket: WebSocket,
-
-                        t: Throwable,
-
-                        response: Response?
-
-                    ) {
-
-
-                        connected = false
-
-
-                        Timber.e(
-                            "WebSocket error: ${t.message}"
-                        )
-
-
-                        onError(
-                            t.message
-                                ?: "Unknown websocket error"
-                        )
-
-                    }
-
-
-                }
+                socketListener
 
             )
+
 
     }
 
@@ -220,14 +112,189 @@ class WebSocketClient(
 
 
 
+
+    private val socketListener =
+        object : WebSocketListener() {
+
+
+
+            override fun onOpen(
+
+                webSocket: WebSocket,
+
+                response: Response
+
+            ) {
+
+
+                connected = true
+
+
+
+                Timber.d(
+                    "WebSocket connected"
+                )
+
+
+
+                onConnected()
+
+            }
+
+
+
+
+
+
+
+
+            override fun onMessage(
+
+                webSocket: WebSocket,
+
+                text: String
+
+            ) {
+
+
+                Timber.d(
+                    "WebSocket message: ${text.take(200)}"
+                )
+
+
+
+                onMessageReceived(
+                    text
+                )
+
+
+            }
+
+
+
+
+
+
+
+
+            override fun onClosing(
+
+                webSocket: WebSocket,
+
+                code: Int,
+
+                reason: String
+
+            ) {
+
+
+                Timber.d(
+                    "WebSocket closing: $reason"
+                )
+
+
+
+                connected = false
+
+
+
+                webSocket.close(
+                    1000,
+                    null
+                )
+
+
+            }
+
+
+
+
+
+
+
+
+            override fun onClosed(
+
+                webSocket: WebSocket,
+
+                code: Int,
+
+                reason: String
+
+            ) {
+
+
+                connected = false
+
+
+
+                Timber.d(
+                    "WebSocket closed: $reason"
+                )
+
+
+
+                onDisconnected()
+
+
+            }
+
+
+
+
+
+
+
+
+            override fun onFailure(
+
+                webSocket: WebSocket,
+
+                t: Throwable,
+
+                response: Response?
+
+            ) {
+
+
+                connected = false
+
+
+
+                Timber.e(
+                    "WebSocket failure: ${t.message}"
+                )
+
+
+
+                onError(
+                    t.message
+                        ?: "Unknown websocket error"
+                )
+
+
+            }
+
+
+        }
+
+
+
+
+
+
+
+
+
     fun send(
-
-        message: String
-
+        message:String
     ) {
 
 
-        if(!connected) {
+
+        if(
+            !connected
+        ) {
 
 
             Timber.w(
@@ -242,21 +309,27 @@ class WebSocketClient(
 
 
 
-        val success =
 
-            webSocket?.send(
-                message
-            )
+        val success =
+            webSocket
+                ?.send(
+                    message
+                )
                 ?: false
 
 
 
 
-        Timber.d(
 
-            "WebSocket send result: $success"
+        if(!success) {
 
-        )
+
+            Timber.e(
+                "Failed sending websocket message"
+            )
+
+
+        }
 
 
     }
@@ -269,30 +342,48 @@ class WebSocketClient(
 
 
 
-    fun disconnect(){
+    fun isConnected():Boolean {
+
+
+        return connected
+
+    }
+
+
+
+
+
+
+
+
+
+    fun disconnect() {
+
+
+        Timber.d(
+            "Disconnecting websocket"
+        )
+
 
 
         connected = false
 
 
 
-        webSocket?.close(
+        webSocket
+            ?.close(
 
-            1000,
+                1000,
 
-            "Client disconnect"
+                "Client disconnect"
 
-        )
+            )
+
 
 
         webSocket = null
 
 
-
-        Timber.d(
-            "WebSocket disconnected"
-        )
-
     }
 
 
@@ -303,37 +394,33 @@ class WebSocketClient(
 
 
 
-    fun destroy(){
+    fun destroy() {
 
 
         disconnect()
 
 
-        client.dispatcher
+
+        client
+            .dispatcher
             .executorService
             .shutdown()
 
 
-        client.connectionPool
+
+        client
+            .connectionPool
             .evictAll()
 
 
 
+        Timber.d(
+            "WebSocket destroyed"
+        )
+
+
     }
 
-
-
-
-
-
-
-
-    fun isConnected(): Boolean {
-
-
-        return connected
-
-    }
 
 
 }
