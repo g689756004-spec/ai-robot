@@ -1,16 +1,22 @@
 package com.robot.ai.services
 
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import androidx.core.app.NotificationCompat
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.robot.ai.R
 import com.robot.ai.network.WebSocketClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,31 +33,71 @@ class VoiceRecognitionService :
     RecognitionListener {
 
 
-    private var speechRecognizer: SpeechRecognizer? = null
+
+    private val binder =
+        LocalBinder()
 
 
-    private var textToSpeech: TextToSpeech? = null
+
+    inner class LocalBinder : Binder() {
+
+        fun getService():
+                VoiceRecognitionService {
+
+            return this@VoiceRecognitionService
+
+        }
+
+    }
 
 
-    private lateinit var webSocketClient: WebSocketClient
 
 
-    private val gson = Gson()
 
 
-    private val serviceScope =
+
+    private var speechRecognizer:
+            SpeechRecognizer? = null
+
+
+
+    private var textToSpeech:
+            TextToSpeech? = null
+
+
+
+    private lateinit var webSocketClient:
+            WebSocketClient
+
+
+
+    private val gson =
+        Gson()
+
+
+
+    private val scope =
         CoroutineScope(
             Dispatchers.Main
         )
 
 
-    private var retryJob: Job? = null
+
+    private var restartJob:
+            Job? = null
 
 
-    private var isListening = false
+
+    private var listening =
+        false
 
 
-    private var ttsReady = false
+
+    private var ttsReady =
+        false
+
+
+
 
 
 
@@ -63,8 +109,19 @@ class VoiceRecognitionService :
 
 
         Timber.d(
-            "Voice service created"
+            "Voice service started"
         )
+
+
+
+        createNotificationChannel()
+
+
+        startForeground(
+            1001,
+            createNotification()
+        )
+
 
 
         setupWebSocket()
@@ -82,11 +139,14 @@ class VoiceRecognitionService :
 
 
 
+
+
     override fun onBind(
         intent: Intent?
-    ): IBinder? {
+    ): IBinder {
 
-        return null
+
+        return binder
 
     }
 
@@ -109,42 +169,46 @@ class VoiceRecognitionService :
                 "wss://YOUR_RENDER_APP.onrender.com/ws/agent",
 
 
-                onMessageReceived = { message ->
 
-                    handleServerMessage(
-                        message
-                    )
+                onMessageReceived = {
+
+                    handleMessage(it)
 
                 },
+
 
 
                 onConnected = {
 
                     Timber.d(
-                        "Voice websocket connected"
+                        "WebSocket connected"
                     )
 
                 },
+
 
 
                 onDisconnected = {
 
                     Timber.d(
-                        "Voice websocket disconnected"
+                        "WebSocket disconnected"
                     )
 
                 },
 
 
-                onError = { error ->
+
+                onError = {
 
                     Timber.e(
-                        "WebSocket error: $error"
+                        "WebSocket error $it"
                     )
 
                 }
 
+
             )
+
 
 
         webSocketClient.connect()
@@ -159,7 +223,7 @@ class VoiceRecognitionService :
 
 
 
-    private fun handleServerMessage(
+    private fun handleMessage(
         message:String
     ) {
 
@@ -174,40 +238,33 @@ class VoiceRecognitionService :
                 )
 
 
-            val type =
+
+            when(
                 json.get("type")
                     ?.asString
-                    ?: return
+            ) {
 
-
-
-
-            when(type) {
 
 
                 "chat_response" -> {
 
 
-                    val reply =
+                    val text =
                         json.get("message")
                             ?.asString
 
 
 
                     if(
-                        !reply.isNullOrBlank()
+                        !text.isNullOrEmpty()
                     ) {
 
-
-                        speak(
-                            reply
-                        )
+                        speak(text)
 
                     }
 
 
                 }
-
 
 
 
@@ -221,7 +278,7 @@ class VoiceRecognitionService :
 
 
                     if(
-                        !text.isNullOrBlank()
+                        !text.isNullOrEmpty()
                     ) {
 
                         speak(text)
@@ -230,17 +287,6 @@ class VoiceRecognitionService :
 
                 }
 
-
-
-
-                else -> {
-
-
-                    Timber.d(
-                        "Unhandled message: $message"
-                    )
-
-                }
 
 
             }
@@ -252,8 +298,9 @@ class VoiceRecognitionService :
 
 
             Timber.e(
-                "Message parse error: ${e.message}"
+                "Message error ${e.message}"
             )
+
 
         }
 
@@ -288,34 +335,18 @@ class VoiceRecognitionService :
 
 
 
-        createRecognizer()
-
-    }
-
-
-
-
-
-
-
-
-
-    private fun createRecognizer() {
-
-
-        speechRecognizer?.destroy()
-
-
-
         speechRecognizer =
             SpeechRecognizer
-                .createSpeechRecognizer(this)
+                .createSpeechRecognizer(
+                    this
+                )
 
 
 
         speechRecognizer
-            ?.setRecognitionListener(this)
-
+            ?.setRecognitionListener(
+                this
+            )
 
     }
 
@@ -331,42 +362,28 @@ class VoiceRecognitionService :
 
 
         textToSpeech =
-            TextToSpeech(this) { status ->
-
+            TextToSpeech(this) {
 
 
                 if(
-                    status ==
+                    it ==
                     TextToSpeech.SUCCESS
                 ) {
 
 
-                    val result =
-                        textToSpeech
-                            ?.setLanguage(
-                                Locale.US
-                            )
+                    textToSpeech
+                        ?.language =
+                        Locale.US
 
 
 
                     ttsReady =
-                        result !=
-                        TextToSpeech.LANG_MISSING_DATA &&
-                        result !=
-                        TextToSpeech.LANG_NOT_SUPPORTED
+                        true
 
 
 
                     Timber.d(
-                        "TTS ready: $ttsReady"
-                    )
-
-                }
-                else {
-
-
-                    Timber.e(
-                        "TTS initialization failed"
+                        "TTS ready"
                     )
 
 
@@ -374,7 +391,6 @@ class VoiceRecognitionService :
 
 
             }
-
 
     }
 
@@ -390,79 +406,17 @@ class VoiceRecognitionService :
 
 
         if(
-            isListening
+            listening
         ) return
 
 
 
-        isListening = true
+        listening =
+            true
 
 
 
-        startRecognizer()
-
-
-    }
-
-
-
-
-
-
-
-
-
-    private fun startRecognizer() {
-
-
-        if(
-            !isListening
-        ) return
-
-
-
-        val recognizer =
-            speechRecognizer
-                ?: return
-
-
-
-        val intent =
-            Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-            )
-
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        )
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_LANGUAGE,
-            Locale.US
-        )
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-            false
-        )
-
-
-
-        recognizer.startListening(
-            intent
-        )
-
-
-
-        Timber.d(
-            "Started listening"
-        )
-
+        listen()
 
     }
 
@@ -477,21 +431,14 @@ class VoiceRecognitionService :
     fun stopListening() {
 
 
-        isListening = false
-
-
-        retryJob?.cancel()
+        listening =
+            false
 
 
 
         speechRecognizer
             ?.stopListening()
 
-
-
-        Timber.d(
-            "Stopped listening"
-        )
 
     }
 
@@ -503,22 +450,68 @@ class VoiceRecognitionService :
 
 
 
-    private fun sendVoiceCommand(
+    private fun listen() {
+
+
+        if(
+            !listening
+        ) return
+
+
+
+        val intent =
+            Intent(
+                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+            )
+
+
+
+        intent.putExtra(
+
+            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+
+        )
+
+
+
+        intent.putExtra(
+
+            RecognizerIntent.EXTRA_LANGUAGE,
+
+            Locale.US
+
+        )
+
+
+
+        speechRecognizer
+            ?.startListening(intent)
+
+
+
+        Timber.d(
+            "Listening"
+        )
+
+
+    }
+
+
+
+
+
+
+
+
+
+    private fun sendVoice(
         text:String
     ) {
 
 
-        if(
-            !::webSocketClient.isInitialized
-        ) {
-
-            return
-
-        }
-
-
-
-        val payload =
+        val data =
             mapOf(
 
                 "type" to "voice_command",
@@ -533,13 +526,7 @@ class VoiceRecognitionService :
 
 
         webSocketClient.send(
-            gson.toJson(payload)
-        )
-
-
-
-        Timber.d(
-            "Voice sent: $text"
+            gson.toJson(data)
         )
 
 
@@ -560,37 +547,22 @@ class VoiceRecognitionService :
 
         if(
             !ttsReady
-        ) {
+        ) return
 
 
-            Timber.w(
-                "TTS not ready"
+
+        textToSpeech
+            ?.speak(
+
+                text,
+
+                TextToSpeech.QUEUE_FLUSH,
+
+                null,
+
+                "AI_REPLY"
+
             )
-
-
-            return
-
-        }
-
-
-
-        textToSpeech?.speak(
-
-            text,
-
-            TextToSpeech.QUEUE_FLUSH,
-
-            null,
-
-            "AI_RESPONSE"
-
-        )
-
-
-
-        Timber.d(
-            "Speaking: $text"
-        )
 
 
     }
@@ -604,7 +576,7 @@ class VoiceRecognitionService :
 
 
     override fun onResults(
-        results:Bundle?
+        results: Bundle?
     ) {
 
 
@@ -621,7 +593,7 @@ class VoiceRecognitionService :
         ) {
 
 
-            sendVoiceCommand(
+            sendVoice(
                 matches[0]
             )
 
@@ -642,52 +614,23 @@ class VoiceRecognitionService :
 
 
 
-    override fun onError(
-        error:Int
-    ) {
-
-
-        Timber.e(
-            "Speech error: $error"
-        )
-
-
-
-        restartListening()
-
-    }
-
-
-
-
-
-
-
-
-
     private fun restartListening() {
 
 
         if(
-            !isListening
+            !listening
         ) return
 
 
 
-        retryJob?.cancel()
+        restartJob =
+            scope.launch {
 
 
-
-        retryJob =
-            serviceScope.launch {
+                delay(800)
 
 
-                delay(700)
-
-
-                createRecognizer()
-
-                startRecognizer()
+                listen()
 
 
             }
@@ -703,38 +646,34 @@ class VoiceRecognitionService :
 
 
 
-    override fun onReadyForSpeech(
-        params:Bundle?
+    override fun onError(
+        error:Int
     ) {
 
 
-        Timber.d(
-            "Ready for speech"
+        Timber.e(
+            "Speech error $error"
         )
+
+
+
+        restartListening()
 
     }
 
 
 
-    override fun onBeginningOfSpeech() {
-
-
-        Timber.d(
-            "Speech started"
-        )
-
-    }
+    override fun onReadyForSpeech(
+        params:Bundle?
+    ) {}
 
 
 
-    override fun onEndOfSpeech() {
+    override fun onBeginningOfSpeech() {}
 
 
-        Timber.d(
-            "Speech ended"
-        )
 
-    }
+    override fun onEndOfSpeech() {}
 
 
 
@@ -769,19 +708,89 @@ class VoiceRecognitionService :
 
 
 
-    override fun onDestroy() {
+    private fun createNotificationChannel() {
 
 
-        Timber.d(
-            "Destroying voice service"
+        val channel =
+            NotificationChannel(
+
+                "voice_agent",
+
+                "AI Voice Agent",
+
+                NotificationManager.IMPORTANCE_LOW
+
+            )
+
+
+
+        val manager =
+            getSystemService(
+                NotificationManager::class.java
+            )
+
+
+        manager.createNotificationChannel(
+            channel
         )
 
 
-        isListening = false
+    }
 
 
 
-        retryJob?.cancel()
+
+
+
+
+
+
+    private fun createNotification():
+            Notification {
+
+
+        return NotificationCompat.Builder(
+
+            this,
+
+            "voice_agent"
+
+        )
+
+            .setContentTitle(
+                "AI Robot Listening"
+            )
+
+            .setContentText(
+                "Voice service running"
+            )
+
+            .setSmallIcon(
+                R.drawable.ic_launcher_foreground
+            )
+
+            .build()
+
+
+    }
+
+
+
+
+
+
+
+
+
+    override fun onDestroy() {
+
+
+        listening =
+            false
+
+
+
+        restartJob?.cancel()
 
 
 
@@ -791,30 +800,19 @@ class VoiceRecognitionService :
 
 
         textToSpeech
-            ?.stop()
-
-
-
-        textToSpeech
             ?.shutdown()
 
 
 
-        if(
-            ::webSocketClient.isInitialized
-        ) {
-
-
-            webSocketClient.destroy()
-
-
-        }
+        webSocketClient.destroy()
 
 
 
         super.onDestroy()
 
+
     }
+
 
 
 }
