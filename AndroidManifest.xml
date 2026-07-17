@@ -3,38 +3,45 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
 
-    <!-- Internet for WebSocket communication -->
+    <!-- Internet access for WebSocket connection -->
     <uses-permission android:name="android.permission.INTERNET" />
 
 
-    <!-- Microphone for voice recognition -->
+    <!-- Microphone access for speech recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
 
-    <!-- Foreground service permission -->
+    <!-- Required for foreground voice service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
 
-    <!-- Android 14+ microphone foreground service -->
+    <!-- Android 14+ foreground microphone service permission -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
 
-    <!-- Android 14+ media projection foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Keep service running after device sleep -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
 
 
 
     <application
 
+
         android:allowBackup="true"
+
 
         android:icon="@mipmap/ic_launcher"
 
-        android:label="AI Robot Voice Agent"
+
+        android:label="AI Robot"
+
 
         android:roundIcon="@mipmap/ic_launcher_round"
 
+
         android:supportsRtl="true"
+
 
         android:theme="@style/Theme.AIRobot">
 
@@ -44,16 +51,21 @@
 
         <activity
 
+
             android:name=".MainActivity"
+
 
             android:exported="true">
 
 
             <intent-filter>
 
+
                 <action android:name="android.intent.action.MAIN" />
 
+
                 <category android:name="android.intent.category.LAUNCHER" />
+
 
             </intent-filter>
 
@@ -66,28 +78,23 @@
 
 
 
+        <!-- AI Voice Service -->
+
         <service
+
 
             android:name=".services.VoiceRecognitionService"
 
+
+            android:enabled="true"
+
+
             android:exported="false"
+
 
             android:foregroundServiceType="microphone" />
 
 
-
-
-
-
-
-
-        <service
-
-            android:name=".services.ScreenCaptureService"
-
-            android:exported="false"
-
-            android:foregroundServiceType="mediaProjection" />
 
 
 
