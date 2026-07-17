@@ -1,207 +1,215 @@
-package com.robot.ai.services
+package com.robot.ai.network
 
-import android.app.Service
-import android.content.Intent
-import android.os.Bundle
-import android.os.IBinder
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.robot.ai.network.WebSocketClient
+
+import okhttp3.*
 import timber.log.Timber
-import java.util.Locale
-
-
-class VoiceRecognitionService : Service(), RecognitionListener {
-
-
-    private var speechRecognizer: SpeechRecognizer? = null
-
-    private var textToSpeech: TextToSpeech? = null
-
-
-    private lateinit var webSocketClient: WebSocketClient
-
-
-    private val gson = Gson()
-
-
-    private var isListening = false
+import java.util.concurrent.TimeUnit
 
 
 
-    override fun onCreate() {
+class WebSocketClient(
 
-        super.onCreate()
-
-
-        setupWebSocket()
-
-        setupSpeechRecognizer()
-
-        setupTextToSpeech()
+    private val backendUrl: String =
+        "wss://YOUR_RENDER_APP.onrender.com/ws/agent",
 
 
-        Timber.d(
-            "Voice service started"
-        )
-
-    }
+    private val onMessageReceived: (String) -> Unit = {},
 
 
+    private val onConnected: () -> Unit = {},
 
 
+    private val onDisconnected: () -> Unit = {},
 
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? {
 
-        return null
+    private val onError: (String) -> Unit = {}
 
-    }
+) {
 
 
 
+    private val client: OkHttpClient =
 
+        OkHttpClient.Builder()
 
-
-
-    private fun setupWebSocket(){
-
-
-
-        webSocketClient =
-            WebSocketClient(
-
-                backendUrl =
-                "wss://YOUR_RENDER_APP.onrender.com/ws/agent",
-
-
-                onMessageReceived = { message ->
-
-                    handleServerMessage(message)
-
-                },
-
-
-                onConnected = {
-
-                    Timber.d(
-                        "Voice websocket connected"
-                    )
-
-                },
-
-
-                onDisconnected = {
-
-                    Timber.d(
-                        "Voice websocket disconnected"
-                    )
-
-                },
-
-
-                onError = {
-
-                    Timber.e(
-                        "Websocket error: $it"
-                    )
-
-                }
-
+            .connectTimeout(
+                30,
+                TimeUnit.SECONDS
             )
 
+            .readTimeout(
+                0,
+                TimeUnit.MILLISECONDS
+            )
 
+            .writeTimeout(
+                30,
+                TimeUnit.SECONDS
+            )
 
-        webSocketClient.connect()
-
-
-    }
-
-
-
-
-
-
-
-
-    private fun handleServerMessage(
-        message:String
-    ){
-
-
-        try {
-
-
-            val json =
-                gson.fromJson(
-                    message,
-                    JsonObject::class.java
-                )
+            .build()
 
 
 
-            val type =
-                json.get("type")
-                    ?.asString
+    private var webSocket: WebSocket? = null
+
+
+    private var connected = false
 
 
 
 
-            when(type){
+
+    fun connect() {
+
+
+        if(connected) {
+
+            Timber.d(
+                "WebSocket already connected"
+            )
+
+            return
+
+        }
 
 
 
-                "chat_response" -> {
+        val request =
+
+            Request.Builder()
+
+                .url(backendUrl)
+
+                .build()
 
 
-                    val reply =
-                        json.get("message")
-                            ?.asString
 
 
 
-                    if(
-                        !reply.isNullOrEmpty()
-                    ){
+        webSocket =
 
-                        speak(reply)
+            client.newWebSocket(
+
+                request,
+
+                object : WebSocketListener(){
+
+
+
+                    override fun onOpen(
+
+                        webSocket: WebSocket,
+
+                        response: Response
+
+                    ) {
+
+
+                        connected = true
+
+
+                        Timber.d(
+                            "WebSocket connected"
+                        )
+
+
+                        onConnected()
+
+                    }
+
+
+
+
+
+
+
+                    override fun onMessage(
+
+                        webSocket: WebSocket,
+
+                        text: String
+
+                    ) {
+
+
+                        Timber.d(
+                            "WS message: ${text.take(200)}"
+                        )
+
+
+                        onMessageReceived(
+                            text
+                        )
+
+                    }
+
+
+
+
+
+
+
+                    override fun onClosed(
+
+                        webSocket: WebSocket,
+
+                        code: Int,
+
+                        reason: String
+
+                    ) {
+
+
+                        connected = false
+
+
+                        Timber.d(
+                            "WebSocket closed: $reason"
+                        )
+
+
+                        onDisconnected()
+
+                    }
+
+
+
+
+
+
+
+
+                    override fun onFailure(
+
+                        webSocket: WebSocket,
+
+                        t: Throwable,
+
+                        response: Response?
+
+                    ) {
+
+
+                        connected = false
+
+
+                        Timber.e(
+                            "WebSocket error: ${t.message}"
+                        )
+
+
+                        onError(
+                            t.message
+                                ?: "Unknown websocket error"
+                        )
 
                     }
 
 
                 }
 
-
-
-                else -> {
-
-
-                    Timber.d(
-                        "Unknown server message: $message"
-                    )
-
-                }
-
-
-            }
-
-
-
-        }catch(e:Exception){
-
-
-            Timber.e(
-                "Message parsing error ${e.message}"
             )
-
-
-        }
-
 
     }
 
@@ -212,19 +220,20 @@ class VoiceRecognitionService : Service(), RecognitionListener {
 
 
 
+    fun send(
 
-    private fun setupSpeechRecognizer(){
+        message: String
+
+    ) {
 
 
+        if(!connected) {
 
-        if(
-            !SpeechRecognizer
-                .isRecognitionAvailable(this)
-        ){
 
-            Timber.e(
-                "Speech recognition unavailable"
+            Timber.w(
+                "Cannot send. WebSocket not connected"
             )
+
 
             return
 
@@ -232,140 +241,21 @@ class VoiceRecognitionService : Service(), RecognitionListener {
 
 
 
-        speechRecognizer =
-            SpeechRecognizer
-                .createSpeechRecognizer(this)
 
+        val success =
 
-
-        speechRecognizer
-            ?.setRecognitionListener(this)
-
-
-    }
-
-
-
-
-
-
-
-
-
-    private fun setupTextToSpeech(){
-
-
-
-        textToSpeech =
-            TextToSpeech(this){ status ->
-
-
-
-                if(
-                    status ==
-                    TextToSpeech.SUCCESS
-                ){
-
-
-                    textToSpeech
-                        ?.language =
-                        Locale.US
-
-
-
-                    Timber.d(
-                        "TTS ready"
-                    )
-
-                }
-
-
-            }
-
-
-    }
-
-
-
-
-
-
-
-
-
-    fun startListening(){
-
-
-        if(isListening)
-            return
-
-
-
-        isListening = true
-
-
-        listen()
-
-
-    }
-
-
-
-
-
-
-
-
-
-    private fun listen(){
-
-
-
-        if(
-            speechRecognizer == null
-        ){
-
-            return
-
-        }
-
-
-
-        val intent =
-            Intent(
-                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+            webSocket?.send(
+                message
             )
+                ?: false
 
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-        )
-
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_LANGUAGE,
-            Locale.US
-        )
-
-
-
-        intent.putExtra(
-            RecognizerIntent.EXTRA_PARTIAL_RESULTS,
-            false
-        )
-
-
-
-        speechRecognizer
-            ?.startListening(intent)
 
 
 
         Timber.d(
-            "Listening..."
+
+            "WebSocket send result: $success"
+
         )
 
 
@@ -379,58 +269,54 @@ class VoiceRecognitionService : Service(), RecognitionListener {
 
 
 
-    fun stopListening(){
+    fun disconnect(){
 
 
-        isListening = false
-
-
-        speechRecognizer
-            ?.stopListening()
+        connected = false
 
 
 
-    }
+        webSocket?.close(
 
+            1000,
 
-
-
-
-
-
-
-
-    private fun sendVoiceCommand(
-        text:String
-    ){
-
-
-
-        val message =
-            mapOf(
-
-                "type" to "voice_command",
-
-                "message" to text,
-
-                "timestamp" to
-                System.currentTimeMillis()
-
-            )
-
-
-
-        webSocketClient.send(
-
-            gson.toJson(message)
+            "Client disconnect"
 
         )
+
+
+        webSocket = null
 
 
 
         Timber.d(
-            "Sent voice: $text"
+            "WebSocket disconnected"
         )
+
+    }
+
+
+
+
+
+
+
+
+
+    fun destroy(){
+
+
+        disconnect()
+
+
+        client.dispatcher
+            .executorService
+            .shutdown()
+
+
+        client.connectionPool
+            .evictAll()
+
 
 
     }
@@ -442,211 +328,10 @@ class VoiceRecognitionService : Service(), RecognitionListener {
 
 
 
+    fun isConnected(): Boolean {
 
-    fun speak(
-        text:String
-    ){
 
-
-
-        Timber.d(
-            "AI speaking: $text"
-        )
-
-
-
-        textToSpeech
-            ?.speak(
-
-                text,
-
-                TextToSpeech.QUEUE_FLUSH,
-
-                null,
-
-                "AI_REPLY"
-
-            )
-
-
-    }
-
-
-
-
-
-
-
-
-
-    override fun onResults(
-        results:Bundle?
-    ){
-
-
-
-        val matches =
-            results
-                ?.getStringArrayList(
-                    SpeechRecognizer.RESULTS_RECOGNITION
-                )
-
-
-
-        if(
-            !matches.isNullOrEmpty()
-        ){
-
-
-            sendVoiceCommand(
-                matches[0]
-            )
-
-
-        }
-
-
-
-        if(isListening){
-
-            listen()
-
-        }
-
-
-    }
-
-
-
-
-
-
-
-
-
-    override fun onError(
-        error:Int
-    ){
-
-
-        Timber.e(
-            "Speech error: $error"
-        )
-
-
-
-        if(isListening){
-
-
-            Thread.sleep(500)
-
-
-            listen()
-
-
-        }
-
-
-    }
-
-
-
-
-
-
-
-    override fun onReadyForSpeech(
-        params:Bundle?
-    ){
-
-        Timber.d(
-            "Ready"
-        )
-
-    }
-
-
-
-    override fun onBeginningOfSpeech(){
-
-        Timber.d(
-            "Speech started"
-        )
-
-    }
-
-
-
-    override fun onEndOfSpeech(){
-
-        Timber.d(
-            "Speech ended"
-        )
-
-    }
-
-
-
-    override fun onRmsChanged(
-        rmsdB:Float
-    ){}
-
-
-
-    override fun onBufferReceived(
-        buffer:ByteArray?
-    ){}
-
-
-
-    override fun onPartialResults(
-        partialResults:Bundle?
-    ){}
-
-
-
-    override fun onEvent(
-        eventType:Int,
-        params:Bundle?
-    ){}
-
-
-
-
-
-
-
-
-
-    override fun onDestroy(){
-
-
-        isListening = false
-
-
-
-        speechRecognizer
-            ?.destroy()
-
-
-
-        textToSpeech
-            ?.shutdown()
-
-
-
-        webSocketClient.destroy()
-
-
-
-        Timber.d(
-            "Voice service stopped"
-        )
-
-
-
-        super.onDestroy()
-
+        return connected
 
     }
 
