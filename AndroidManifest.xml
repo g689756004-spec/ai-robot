@@ -3,15 +3,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
 
-    <!-- Internet access for WebSocket communication -->
+    <!-- Internet for WebSocket communication -->
     <uses-permission android:name="android.permission.INTERNET" />
 
 
-    <!-- Microphone access for SpeechRecognizer -->
+    <!-- Microphone for voice recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
 
-    <!-- Foreground services -->
+    <!-- Foreground service permission -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
 
@@ -19,36 +19,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
 
-    <!-- Android 14+ screen capture foreground service -->
+    <!-- Android 14+ media projection foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
 
 
     <application
 
-
         android:allowBackup="true"
-
 
         android:icon="@mipmap/ic_launcher"
 
-
         android:label="AI Robot Voice Agent"
-
 
         android:roundIcon="@mipmap/ic_launcher_round"
 
-
         android:supportsRtl="true"
-
 
         android:theme="@style/Theme.AIRobot">
 
 
 
 
-
-        <!-- Main application screen -->
 
         <activity
 
@@ -73,7 +65,6 @@
 
 
 
-        <!-- Voice Recognition + Text To Speech Service -->
 
         <service
 
@@ -89,7 +80,6 @@
 
 
 
-        <!-- Screen Capture Service -->
 
         <service
 
@@ -98,8 +88,6 @@
             android:exported="false"
 
             android:foregroundServiceType="mediaProjection" />
-
-
 
 
 
