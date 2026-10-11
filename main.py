@@ -579,15 +579,37 @@ class NoCacheStatic(StaticFiles):
         return resp
 
 
+WEB_FILES = {
+    "index.html", "app.js", "commands.js", "memory.js", "style.css",
+    "manifest.json", "service-worker.js", "icon-192.png", "icon-512.png",
+}
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 if os.path.isdir(STATIC_DIR):
     app.mount("/", NoCacheStatic(directory=STATIC_DIR, html=True), name="web")
+elif os.path.isfile(os.path.join(ROOT_DIR, "index.html")):
+    # The web files were uploaded next to main.py instead of inside static/.
+    # Serve ONLY the known web files (never main.py or anything else).
+    log.warning("No static/ folder - serving the web app from the main folder instead.")
+
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    @app.get("/")
+    async def web_index():
+        return FileResponse(os.path.join(ROOT_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
+
+    @app.get("/{name}")
+    async def web_file(name: str):
+        if name not in WEB_FILES:
+            raise HTTPException(status_code=404)
+        return FileResponse(os.path.join(ROOT_DIR, name), headers={"Cache-Control": "no-cache"})
 else:
-    log.warning("static/ folder not found next to main.py - the web app will not be served. "
-                "Make sure the static folder was uploaded to GitHub together with main.py.")
+    log.warning("No web app files found next to main.py - upload index.html, app.js, ... too.")
 
     @app.get("/")
     async def root():
-        return {"status": "running", "service": "Wizi backend", "note": "static/ folder is missing"}
+        return {"status": "running", "service": "Wizi backend", "note": "web app files are missing"}
 
 
 if __name__ == "__main__":
