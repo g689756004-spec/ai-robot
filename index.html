@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wizi — Voice Assistant</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0b0d10" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="frame">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="40 90 430 300" width="30" height="21" xmlns="http://www.w3.org/2000/svg">
+            <path d="M350 300C385 300 410 255 448 222C462 268 445 330 400 350Z" fill="#fff"/>
+            <ellipse cx="255" cy="322" rx="165" ry="108" fill="#fff"/>
+            <path d="M150 225H262L290 320H165Z" fill="#fff"/>
+            <circle cx="195" cy="185" r="77" fill="#fff"/>
+            <ellipse cx="284" cy="316" rx="76" ry="45" fill="#dde2e9"/>
+            <rect x="58" y="192" width="77" height="34" rx="17" fill="#ffb02e"/>
+            <circle cx="181" cy="168" r="11" fill="#10151b"/>
+          </svg>
+        </span>
+        <span class="brand-name">WIZI</span>
+      </div>
+      <div class="status" id="statusLabel">STANDBY</div>
+    </header>
+
+    <main class="stage">
+      <button class="orb" id="orbButton" aria-label="Start listening">
+        <span class="orb-ring ring-1"></span>
+        <span class="orb-ring ring-2"></span>
+        <span class="orb-ring ring-3"></span>
+        <span class="orb-core"></span>
+        <svg class="orb-icon mic-icon" viewBox="0 0 24 24" fill="none">
+          <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M19 11a7 7 0 0 1-14 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M12 18v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <p class="hint" id="hintText">Tap to talk</p>
+    </main>
+
+    <section class="log" id="conversationLog" aria-live="polite"></section>
+
+    <footer class="controls">
+      <label class="toggle">
+        <input type="checkbox" id="autoListenToggle" />
+        <span>Always listening (stays on across sessions)</span>
+      </label>
+      <button class="text-btn" id="clearBtn">Clear conversation</button>
+      <span id="versionTag" class="version-tag"></span>
+    </footer>
+  </div>
+
+  <div class="unsupported" id="unsupportedBanner" hidden>
+    Your browser doesn't support the Web Speech API needed for voice input.
+    Try Chrome, Edge, or Safari on desktop.
+  </div>
+
+  <script src="memory.js"></script>
+  <script src="commands.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

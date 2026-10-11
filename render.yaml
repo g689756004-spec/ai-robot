@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: wizi-backend
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # paste your key in the Render dashboard
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: CLAUDE_API_KEY
+        sync: false          # optional: only for "find me an article about..."
